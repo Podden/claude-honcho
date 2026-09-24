@@ -23,6 +23,7 @@ interface IdCache {
   peers?: Record<string, string>; // peerName -> peerId
   sessions?: Record<string, { name: string; id: string; updatedAt: string; instanceId?: string }>; // cwd -> session info
   claudeInstanceId?: string; // DEPRECATED: use per-cwd instanceId in sessions map instead
+  scopeMembers?: Record<string, string[]>; // "workspace/scope" -> session names already joined
 }
 
 export function loadIdCache(): IdCache {
@@ -77,6 +78,19 @@ export function setCachedSessionId(cwd: string, name: string, id: string, instan
   const cache = loadIdCache();
   if (!cache.sessions) cache.sessions = {};
   cache.sessions[cwd] = { name, id, updatedAt: new Date().toISOString(), instanceId };
+  saveIdCache(cache);
+}
+
+// Joining a scope re-enqueues a server-side backfill every time, so remember
+// which sessions this machine already joined instead of re-adding on each start.
+export function isScopeMember(workspace: string, scope: string, session: string): boolean {
+  return loadIdCache().scopeMembers?.[`${workspace}/${scope}`]?.includes(session) ?? false;
+}
+
+export function setScopeMember(workspace: string, scope: string, session: string): void {
+  const cache = loadIdCache();
+  const key = `${workspace}/${scope}`;
+  cache.scopeMembers = { ...cache.scopeMembers, [key]: [...(cache.scopeMembers?.[key] ?? []), session] };
   saveIdCache(cache);
 }
 

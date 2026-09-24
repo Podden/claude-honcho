@@ -1,7 +1,7 @@
 import { Honcho } from "@honcho-ai/sdk";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { initHook, loadConfig, getSessionName, getHonchoClientOptions, isPluginEnabled, getCachedStdin, readStdinText, getObservationMode, getInjectionConfig, type InjectionConfig, type PerTurnComponent } from "../config.js";
+import { initHook, loadConfig, getSessionName, getHonchoClientOptions, isPluginEnabled, getCachedStdin, readStdinText, getObservationMode, getInjectionConfig, recallBoundary, type InjectionConfig, type PerTurnComponent } from "../config.js";
 import {
   getMessageCount,
   incrementMessageCount,
@@ -204,10 +204,10 @@ export async function handleUserPrompt(): Promise<void> {
   // and the hook completes as soon as the slowest selected component resolves or
   // times out.
   const [userCtxResult, assistantCtxResult, sessionCtx, dialectic] = await Promise.all([
-    wantUserContext ? raceTimeout(fetchUserContext(config, userPrompt, injection), FETCH_TIMEOUT_MS) : Promise.resolve(null),
+    wantUserContext ? raceTimeout(fetchUserContext(config, userPrompt, injection, sessionName), FETCH_TIMEOUT_MS) : Promise.resolve(null),
     wantAssistantContext ? raceTimeout(fetchAssistantContext(config, userPrompt, injection), FETCH_TIMEOUT_MS) : Promise.resolve(null),
     wantSessionContext ? raceTimeout(fetchSessionContext(config, sessionName, injection), FETCH_TIMEOUT_MS) : Promise.resolve(null),
-    wantDialectic ? raceTimeout(fetchDialectic(config, userPrompt, injection), DIALECTIC_TIMEOUT_MS) : Promise.resolve(null),
+    wantDialectic ? raceTimeout(fetchDialectic(config, userPrompt, injection, sessionName), DIALECTIC_TIMEOUT_MS) : Promise.resolve(null),
   ]);
 
   const userCtx: { context: any; matched?: string[]; queryLabel?: string } | null =
@@ -281,10 +281,10 @@ interface DialecticResult {
 /**
  * Per-turn "dialectic" component: a reasoned peer.chat() answer over the peer's
  * representation, seeded from `dialecticTemplate` (the prompt substituted into
- * %{user_query}). Unscoped by session so recall spans the peer's full history,
- * not just this conversation. Returns null on empty/failed answer.
+ * %{user_query}). Recall spans the peer's full history unless `recallScope`
+ * narrows it to the session or its scope. Returns null on empty/failed answer.
  */
-async function fetchDialectic(config: any, prompt: string, injection: InjectionConfig): Promise<DialecticResult | null> {
+async function fetchDialectic(config: any, prompt: string, injection: InjectionConfig, sessionName: string): Promise<DialecticResult | null> {
   const honcho = new Honcho(getHonchoClientOptions(config));
   const observationMode = getObservationMode(config);
 
@@ -301,6 +301,7 @@ async function fetchDialectic(config: any, prompt: string, injection: InjectionC
   try {
     const answer = await dialecticPeer.chat(query, {
       ...(target ? { target } : {}),
+      ...recallBoundary(injection, sessionName),
       reasoningLevel: reasoning,
     });
     const elapsedMs = Date.now() - startTime;
@@ -315,9 +316,11 @@ async function fetchDialectic(config: any, prompt: string, injection: InjectionC
 
 /**
  * Per-turn "userContext" component: a prompt-scoped peer.context() fetch for
- * the user peer, observation-mode aware.
+ * the user peer, observation-mode aware. With a `recallScope` boundary it reads
+ * representation() instead: context() is peer-global server-side and would fill
+ * unused slots with the most recent conclusions from every other project.
  */
-async function fetchUserContext(config: any, prompt: string, injection: InjectionConfig): Promise<{ context: any; matched: string[]; queryLabel?: string }> {
+async function fetchUserContext(config: any, prompt: string, injection: InjectionConfig, sessionName: string): Promise<{ context: any; matched: string[]; queryLabel?: string }> {
   const honcho = new Honcho(getHonchoClientOptions(config));
   const observationMode = getObservationMode(config);
 
@@ -346,17 +349,26 @@ async function fetchUserContext(config: any, prompt: string, injection: Injectio
   // high-signal, so we never surface fuzzy fallback words as a real match.
   let matched: string[] = [];
 
+  const boundary = recallBoundary(injection, sessionName);
+  const params = {
+    ...(contextTarget ? { target: contextTarget } : {}),
+    searchQuery,
+    searchTopK: injection.searchTopK,
+    searchMaxDistance: injection.searchMaxDistance,
+    maxConclusions: injection.maxConclusions,
+    includeMostFrequent: false,
+  };
+
   try {
-    contextResult = await contextPeer.context({
-      ...(contextTarget ? { target: contextTarget } : {}),
-      searchQuery,
-      searchTopK: injection.searchTopK,
-      searchMaxDistance: injection.searchMaxDistance,
-      maxConclusions: injection.maxConclusions,
-      includeMostFrequent: false,
-    });
+    if (boundary.scope || boundary.session) {
+      contextResult = { representation: await contextPeer.representation({ ...params, ...boundary }) };
+      const where = boundary.scope ? `scope ${boundary.scope}` : `session ${boundary.session}`;
+      logApiCall(`${contextLabel} (${where})`, "POST", `search: ${searchQuery.slice(0, 60)}`, Date.now() - startTime, true);
+    } else {
+      contextResult = await contextPeer.context(params);
+      logApiCall(contextLabel, "GET", `search: ${searchQuery.slice(0, 60)}`, Date.now() - startTime, true);
+    }
     matched = precise ? topics : [];
-    logApiCall(contextLabel, "GET", `search: ${searchQuery.slice(0, 60)}`, Date.now() - startTime, true);
   } catch (e) {
     logHook("user-prompt", `Context fetch failed: ${e}`);
   }
@@ -448,13 +460,17 @@ async function fetchSessionContext(config: any, sessionName: string, injection: 
 //
 // The conclusion count is bounded upstream by the maxConclusions knob passed to
 // context(), so no client-side cap is applied here.
-function extractConclusions(context: any): string[] {
+export function extractConclusions(context: any): string[] {
   const rep = context?.representation;
   if (typeof rep !== "string" || !rep.trim()) return [];
+  // Indented lines are the server's per-conclusion metadata (deductive
+  // "Premises:", inductive "**Type**"/"**Sources**" and their bullets), not
+  // conclusions of their own. Inductive heads carry a leading space
+  // (" **Pattern** [conf]: ...") and are kept.
   return rep
     .split("\n")
-    .filter((l: string) => l.trim() && !l.startsWith("#"))
-    .map((l: string) => l.replace(/^\[.*?\]\s*/, "").replace(/^- /, ""));
+    .filter((l: string) => l.trim() && !l.startsWith("#") && (!/^\s/.test(l) || /^\s?\*\*Pattern\*\*/.test(l)))
+    .map((l: string) => l.replace(/^\[.*?\]\s*/, "").replace(/^\s*\*\*Pattern\*\* \[.*?\]:\s*/, "").replace(/^- /, ""));
 }
 
 // Set once per session to nudge active use of the honcho MCP tools.

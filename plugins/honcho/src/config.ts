@@ -113,6 +113,29 @@ export interface InjectionConfig {
    *  Kept separate from the top-level `reasoningLevel` so per-turn dialectic can
    *  stay cheap on the hot path without lowering the tier used elsewhere. */
   dialecticReasoning?: ReasoningLevel;
+  /** Recall boundary for the per-turn "userContext" and "dialectic" components.
+   *  "peer" (default) searches every session the peer ever joined; "session"
+   *  only the current Honcho session (explicit conclusions only — dream-derived
+   *  ones span sessions); "scope" the scope in `scopes` that lists the current
+   *  session, falling back to "session" when none does. Needs Honcho >= 3.1. */
+  recallScope?: RecallScope;
+  /** Scope name -> Honcho session names, e.g. {"work": ["db-regio", "officeit"]}.
+   *  With recallScope "scope", a listed session joins its scope at session start. */
+  scopes?: Record<string, string[]>;
+}
+
+export type RecallScope = "peer" | "session" | "scope";
+
+/** First scope in `scopes` that lists `sessionName`. */
+export function scopeForSession(injection: InjectionConfig, sessionName: string): string | undefined {
+  return Object.entries(injection.scopes ?? {}).find(([, sessions]) => sessions.includes(sessionName))?.[0];
+}
+
+/** Recall boundary for a per-turn fetch: nothing (peer-wide), a scope, or the session. */
+export function recallBoundary(injection: InjectionConfig, sessionName: string): { scope?: string; session?: string } {
+  if ((injection.recallScope ?? "peer") === "peer") return {};
+  const scope = injection.recallScope === "scope" ? scopeForSession(injection, sessionName) : undefined;
+  return scope ? { scope } : { session: sessionName };
 }
 
 /** Resolved injection defaults: memory-usage directives + session summary +
@@ -131,6 +154,8 @@ export const DEFAULT_INJECTION: Required<InjectionConfig> = {
   dialecticTemplate:
     "Return a compact, factual list of anything from the user's history — preferences, prior decisions, relevant past work — that would help with the following. Write in the third person as background notes; do not address the user, ask questions, or offer next steps. If nothing relevant exists, say so in one line. Relevant to: %{user_query}",
   dialecticReasoning: "medium",
+  recallScope: "peer",
+  scopes: {},
 };
 
 export const REASONING_LEVELS = ["minimal", "low", "medium", "high", "max"] as const;
@@ -589,6 +614,9 @@ function mergeWithEnvVars(config: HonchoCLAUDEConfig): HonchoCLAUDEConfig {
   if (process.env.HONCHO_LOGGING === "false") {
     config.logging = false;
   }
+  if (process.env.HONCHO_SAVE_MESSAGES === "false") {
+    config.saveMessages = false;
+  }
   if (process.env.HONCHO_SAVE_TOOL_USE !== undefined) {
     config.saveToolUse = process.env.HONCHO_SAVE_TOOL_USE === "true";
   }
@@ -671,7 +699,10 @@ export function saveConfig(config: HonchoCLAUDEConfig): void {
 
   setHostIfExplicit("enabled", enabledForSave, existing.enabled);
   setHostIfExplicit("logging", loggingForSave, existing.logging);
-  setHostIfExplicit("saveMessages", config.saveMessages, existing.saveMessages);
+  const saveMessagesForSave = process.env.HONCHO_SAVE_MESSAGES === "false" && config.saveMessages === false
+    ? existingHost.saveMessages
+    : config.saveMessages;
+  setHostIfExplicit("saveMessages", saveMessagesForSave, existing.saveMessages);
   setHostIfExplicit("sessionStrategy", config.sessionStrategy, existing.sessionStrategy);
   setHostIfExplicit("sessionPeerPrefix", config.sessionPeerPrefix, existing.sessionPeerPrefix);
   setHostIfExplicit("reasoningLevel", config.reasoningLevel, existing.reasoningLevel);

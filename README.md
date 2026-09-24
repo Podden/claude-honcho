@@ -279,8 +279,10 @@ The `injection` config block controls exactly what memory is injected into Claud
 | `sessionContextTokens` | `1500` | Token budget for the `sessionContext` message fetch |
 | `dialecticTemplate` | compact factual recall | Query template for the `dialectic` component; the prompt is substituted into `%{user_query}` |
 | `dialecticReasoning` | `"medium"` | Reasoning tier for the per-turn `dialectic` call — separate from the top-level `reasoningLevel` |
+| `recallScope` | `"peer"` | Recall boundary for `userContext` and `dialectic`: `"peer"` (every session), `"session"` (current session only, explicit conclusions), `"scope"` (the session's scope from `scopes`, else the session). Needs Honcho ≥ 3.1 |
+| `scopes` | `{}` | Scope name → session names, e.g. `{"work": ["db-regio", "officeit"]}`. With `recallScope: "scope"` a listed session joins its scope at session start |
 
-If injected context feels off-topic, lower `searchMaxDistance`; if too sparse, raise it or bump `searchTopK`.
+If injected context feels off-topic, lower `searchMaxDistance`; if too sparse, raise it or bump `searchTopK`. If conclusions from other projects show up, set `recallScope`: the default `"peer"` fetch is workspace-wide and fills unused slots with the most recent conclusions from any session.
 
 **Visibility:** per-turn components report a one-line summary in the terminal by default. To print a component's full injected payload, list it in `showContents`:
 

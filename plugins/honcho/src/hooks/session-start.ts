@@ -1,5 +1,5 @@
 import { Honcho } from "@honcho-ai/sdk";
-import { initHook, loadConfig, getSessionForPath, setSessionForPath, getSessionName, getHonchoClientOptions, isPluginEnabled, getCachedStdin, readStdinText, getObservationMode, getInjectionConfig } from "../config.js";
+import { initHook, loadConfig, getSessionForPath, setSessionForPath, getSessionName, getHonchoClientOptions, isPluginEnabled, getCachedStdin, readStdinText, getObservationMode, getInjectionConfig, scopeForSession } from "../config.js";
 import { renderSessionStart } from "../injection.js";
 import {
   setCachedSessionId,
@@ -8,6 +8,8 @@ import {
   getCachedGitState,
   setCachedGitState,
   detectGitChanges,
+  isScopeMember,
+  setScopeMember,
 } from "../cache.js";
 import { Spinner } from "../spinner.js";
 import { setMemoryState, setSessionLink } from "../state.js";
@@ -168,6 +170,21 @@ export async function handleSessionStart(): Promise<void> {
 
     const injection = getInjectionConfig(config);
     const startComponents = injection.sessionStart;
+
+    // recallScope "scope": join this session to its configured scope once, so
+    // per-turn recall can read through it. The server backfills existing
+    // explicit conclusions in the background.
+    const scopeName = injection.recallScope === "scope" ? scopeForSession(injection, sessionName) : undefined;
+    if (scopeName && !isScopeMember(config.workspace, scopeName, sessionName)) {
+      const joinStart = Date.now();
+      try {
+        await (await honcho.scope(scopeName)).addSessions([session]);
+        setScopeMember(config.workspace, scopeName, sessionName);
+        logApiCall("scope.addSessions", "POST", `${scopeName} <- ${sessionName}`, Date.now() - joinStart, true);
+      } catch (e) {
+        logHook("session-start", `Joining scope ${scopeName} failed: ${e}`);
+      }
+    }
     const wantSummary = startComponents.includes("summary");
     const wantContext =
       startComponents.includes("peerCard") || startComponents.includes("peerRepresentation");

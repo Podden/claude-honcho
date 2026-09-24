@@ -17,6 +17,10 @@ const HARNESS_INJECTED_PATTERNS = [
   /^<command-message>/,
   /^<system-reminder>/,
   /^<bash-(stdout|stderr|input)>/,
+  // Another session's SendMessage and channel deliveries: agent-authored text,
+  // not something the human typed (#131).
+  /^<cross-session-message[\s>]/,
+  /^<channel[\s>]/,
   // `<<...>>` sentinels the runtime re-submits through the user slot and
   // resolves at fire time (e.g. <<autonomous-loop-dynamic>> from /loop wakeups)
   /^<<[\w-]+>>$/,
