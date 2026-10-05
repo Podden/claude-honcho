@@ -40,4 +40,23 @@ describe("isHarnessInjected", () => {
   test("plain prompt is user input", () => {
     expect(isHarnessInjected("do the thing")).toBe(false);
   });
+
+  test("subagent hand-back behind the message preamble is harness-injected", () => {
+    const p =
+      'Another Claude session sent a message:\n<agent-message from="ab6797cbd3dbb120a">\n[Subagent hand-back] report';
+    expect(isHarnessInjected(p)).toBe(true);
+  });
+
+  test("cross-session message behind the preamble is harness-injected", () => {
+    const p = 'Another Claude session sent a message:\n<cross-session-message from-name="einsprecher">\nhi';
+    expect(isHarnessInjected(p)).toBe(true);
+  });
+
+  test("bare agent-message envelope is harness-injected", () => {
+    expect(isHarnessInjected('<agent-message from="a1">\nreport')).toBe(true);
+  });
+
+  test("prompt that only mentions agent-message is user input", () => {
+    expect(isHarnessInjected("why does <agent-message> end up in honcho?")).toBe(false);
+  });
 });

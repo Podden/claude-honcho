@@ -21,6 +21,8 @@ const HARNESS_INJECTED_PATTERNS = [
   // not something the human typed (#131).
   /^<cross-session-message[\s>]/,
   /^<channel[\s>]/,
+  // Subagent hand-backs: the final report of a delegated agent, model output.
+  /^<agent-message[\s>]/,
   // `<<...>>` sentinels the runtime re-submits through the user slot and
   // resolves at fire time (e.g. <<autonomous-loop-dynamic>> from /loop wakeups)
   /^<<[\w-]+>>$/,
@@ -34,7 +36,11 @@ export function stripLeadingReminders(prompt: string): string {
   return prompt.replace(LEADING_REMINDERS, "");
 }
 
+// Claude Code puts this line in front of <agent-message> and
+// <cross-session-message> envelopes, so the tag is not at the start.
+const MESSAGE_PREAMBLE = /^Another Claude session sent a message:\s*/;
+
 export function isHarnessInjected(prompt: string): boolean {
-  const trimmed = stripLeadingReminders(prompt).trim();
+  const trimmed = stripLeadingReminders(prompt).trim().replace(MESSAGE_PREAMBLE, "");
   return !trimmed || HARNESS_INJECTED_PATTERNS.some((p) => p.test(trimmed));
 }
