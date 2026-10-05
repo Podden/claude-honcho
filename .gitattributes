@@ -1,0 +1,4 @@
+# Plugin files are executed straight from a git checkout (marketplace install):
+# keep LF regardless of core.autocrlf, or bash scripts break on \r.
+release/** text eol=lf
+*.sh text eol=lf
