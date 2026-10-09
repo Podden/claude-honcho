@@ -5,7 +5,7 @@
   },
   "metadata": {
     "description": "Fork of plastic-labs/claude-honcho: scoped per-turn recall and stricter filtering of harness-injected messages",
-    "version": "0.3.3-podden.2"
+    "version": "0.3.3-podden.3"
   },
   "plugins": [
     {

@@ -716,8 +716,9 @@ function handleSetConfig(args: Record<string, unknown>) {
   };
 }
 
-/** Client-side ceiling for dialectic chat calls. */
-const DIALECTIC_TIMEOUT_MS = 120_000;
+/** Client-side ceiling for dialectic chat calls. Matches the self-hosted
+ *  server's provider timeout (600s) for high/max reasoning on local models. */
+const DIALECTIC_TIMEOUT_MS = 600_000;
 
 /** Reasoning tiers the remember tool exposes. `minimal` is too weak to be
  *  worth a fan-out slot; `max` runs ≈80s, unusable when a batch blocks a turn. */

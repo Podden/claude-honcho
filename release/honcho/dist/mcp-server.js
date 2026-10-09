@@ -30049,7 +30049,7 @@ function handleSetConfig(args) {
     }]
   };
 }
-var DIALECTIC_TIMEOUT_MS = 120000;
+var DIALECTIC_TIMEOUT_MS = 600000;
 var REMEMBER_REASONING_LEVELS = ["low", "medium", "high"];
 var REMEMBER_MAX_QUERIES = 5;
 var REMEMBER_TOOL = {
@@ -30588,5 +30588,5 @@ ${card.map((item) => `- ${item}`).join(`
 // mcp-server.ts
 await runMcpServer();
 
-//# debugId=F24B82362E2B9A9764756E2164756E21
+//# debugId=2450097EE5ACFF9D64756E2164756E21
 
