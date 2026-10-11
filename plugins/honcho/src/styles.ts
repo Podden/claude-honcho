@@ -7,6 +7,8 @@
  * - Consistent hierarchy: headers, labels, values, dim text
  */
 
+import { loadConfig, getHonchoBaseUrl } from "./config.js";
+
 // ANSI color codes - orange to pale light blue gradient
 export const colors = {
   reset: "\x1b[0m",
@@ -149,7 +151,10 @@ export function highlight(text: string): string {
 /**
  * Build a Honcho app URL for a session
  */
-export function honchoSessionUrl(workspace: string, sessionName: string): string {
+export function honchoSessionUrl(workspace: string, sessionName: string): string | null {
+  // Self-hosted deployments have no app.honcho.dev counterpart — no link.
+  const cfg = loadConfig();
+  if (cfg && !/^https?:\/\/([^/]+\.)?honcho\.dev(\/|$)/.test(getHonchoBaseUrl(cfg))) return null;
   return `https://app.honcho.dev/explore?workspace=${encodeURIComponent(workspace)}&view=sessions&session=${encodeURIComponent(sessionName)}`;
 }
 
@@ -165,5 +170,6 @@ export function hyperlink(url: string, text: string): string {
  */
 export function sessionLine(workspace: string, sessionName: string): string {
   const url = honchoSessionUrl(workspace, sessionName);
+  if (!url) return `${colors.dim}Honcho session:${colors.reset} ${colors.skyBlue}${sessionName}${colors.reset}`;
   return `${colors.dim}Honcho session:${colors.reset} ${hyperlink(url, `${colors.skyBlue}${sessionName}${colors.reset}`)}`;
 }

@@ -1,6 +1,6 @@
 {
   "name": "@honcho-ai/claude-honcho",
-  "version": "0.3.3-podden.3",
+  "version": "0.3.3-podden.4",
   "type": "module",
   "description": "Persistent memory for Claude Code sessions using Honcho by Plastic Labs",
   "author": "Plastic Labs <hello@plasticlabs.ai>",

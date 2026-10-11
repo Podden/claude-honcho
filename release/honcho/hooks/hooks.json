@@ -100,6 +100,12 @@
             "command": "bun ${CLAUDE_PLUGIN_ROOT}/dist/hooks/stop.js",
             "timeout": 10,
             "async": true
+          },
+          {
+            "type": "command",
+            "command": "bun ${CLAUDE_PLUGIN_ROOT}/dist/hooks/recall-topic.js",
+            "timeout": 90,
+            "async": true
           }
         ]
       }

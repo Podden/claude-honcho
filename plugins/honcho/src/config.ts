@@ -122,6 +122,29 @@ export interface InjectionConfig {
   /** Scope name -> Honcho session names, e.g. {"work": ["db-regio", "officeit"]}.
    *  With recallScope "scope", a listed session joins its scope at session start. */
   scopes?: Record<string, string[]>;
+  /** Topic-aware recall for the per-turn "userContext" component. When set, an
+   *  async Stop hook distills the recent conversation into a topic and search
+   *  queries via an OpenAI-compatible LLM, and each prompt's candidates are
+   *  reranked against that topic by a System-One decision model (decider/Laya
+   *  `/v1/systemone`). Null (default) keeps raw-prompt recall. */
+  recall?: RecallPipelineConfig | null;
+}
+
+export interface RecallPipelineConfig {
+  /** OpenAI-compatible base URL of the topic LLM, e.g. "http://host:5802/v1". */
+  topicBaseUrl: string;
+  /** Model id for the topic LLM, e.g. "qwen3.8:27b". */
+  topicModel: string;
+  /** Base URL of the decision model, e.g. "http://host:5810". */
+  rerankUrl: string;
+  /** Keep a candidate when P(relevant) >= threshold (default 0.7). */
+  threshold?: number;
+  /** Candidates fetched per query before reranking (default 12). */
+  candidates?: number;
+  /** Max conclusions injected after reranking (default 5). */
+  maxInject?: number;
+  /** Max cosine distance for the candidate search (default 0.6). */
+  maxDistance?: number;
 }
 
 export type RecallScope = "peer" | "session" | "scope";
@@ -156,6 +179,7 @@ export const DEFAULT_INJECTION: Required<InjectionConfig> = {
   dialecticReasoning: "medium",
   recallScope: "peer",
   scopes: {},
+  recall: null,
 };
 
 export const REASONING_LEVELS = ["minimal", "low", "medium", "high", "max"] as const;

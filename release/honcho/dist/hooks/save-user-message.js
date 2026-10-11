@@ -16449,7 +16449,8 @@ var DEFAULT_INJECTION = {
   dialecticTemplate: "Return a compact, factual list of anything from the user's history — preferences, prior decisions, relevant past work — that would help with the following. Write in the third person as background notes; do not address the user, ask questions, or offer next steps. If nothing relevant exists, say so in one line. Relevant to: %{user_query}",
   dialecticReasoning: "medium",
   recallScope: "peer",
-  scopes: {}
+  scopes: {},
+  recall: null
 };
 var REASONING_LEVELS = ["minimal", "low", "medium", "high", "max"];
 var HONCHO_BASE_URLS = {
@@ -17176,5 +17177,5 @@ async function main() {
 // hooks/save-user-message.ts
 await main();
 
-//# debugId=8F81A64ED11BFB7364756E2164756E21
+//# debugId=E39D68E00DCFC27864756E2164756E21
 

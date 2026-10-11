@@ -8,8 +8,9 @@ import {
   getInstanceIdForCwd,
 } from "../cache.js";
 import { logHook, logApiCall, setLogContext } from "../log.js";
-import { visInjectionMessage, visDialecticMessage, visSessionContextMessage, visSkipMessage, addSystemMessage, verboseApiResult, verboseList } from "../visual.js";
-import type { ReasoningLevel } from "../config.js";
+import { visInjectionMessage, visDialecticMessage, visSessionContextMessage, visSkipMessage, visMessage, addSystemMessage, verboseApiResult, verboseList } from "../visual.js";
+import type { ReasoningLevel, RecallPipelineConfig } from "../config.js";
+import { readRecallTopic, scoreRelevance, selectRelevant } from "../recall.js";
 import { honchoSessionUrl } from "../styles.js";
 import { setMemoryState, setSessionLink } from "../state.js";
 import { TRIVIAL_REPLY_PATTERN, isHarnessInjected, stripLeadingReminders } from "../prompt-filters.js";
@@ -36,6 +37,11 @@ const FETCH_TIMEOUT_MS = 4000;
 // prompt upload no longer runs here — it's a separate async hook — so this
 // budget is the whole hook.)
 const DIALECTIC_TIMEOUT_MS = 120000;
+// Topic-aware recall: candidate search plus one rerank call per candidate on a
+// single-worker decision model (~100 ms each when warm).
+const RECALL_TIMEOUT_MS = 8000;
+const RERANK_TIMEOUT_MS = 6000;
+const RECALL_MAX_CANDIDATES = 16;
 
 /** Resolve a promise with its value, or null if `ms` elapses or it rejects. */
 function raceTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
@@ -86,8 +92,8 @@ function shouldSkipContextRetrieval(prompt: string): boolean {
   return SKIP_CONTEXT_PATTERNS.some((p) => p.test(prompt.trim()));
 }
 
-function formatSessionLink(sessionUrl: string): string {
-  return `view your session in honcho GUI: ${sessionUrl}`;
+function formatSessionLink(sessionUrl: string | null): string | undefined {
+  return sessionUrl ? `view your session in honcho GUI: ${sessionUrl}` : undefined;
 }
 
 function readVersionNag(): string | undefined {
@@ -204,15 +210,19 @@ export async function handleUserPrompt(): Promise<void> {
   // and the hook completes as soon as the slowest selected component resolves or
   // times out.
   const [userCtxResult, assistantCtxResult, sessionCtx, dialectic] = await Promise.all([
-    wantUserContext ? raceTimeout(fetchUserContext(config, userPrompt, injection, sessionName), FETCH_TIMEOUT_MS) : Promise.resolve(null),
+    !wantUserContext
+      ? Promise.resolve(null)
+      : injection.recall
+        ? raceTimeout(fetchRecallContext(config, userPrompt, injection, injection.recall, sessionName, hookInput.session_id), RECALL_TIMEOUT_MS)
+        : raceTimeout(fetchUserContext(config, userPrompt, injection, sessionName), FETCH_TIMEOUT_MS),
     wantAssistantContext ? raceTimeout(fetchAssistantContext(config, userPrompt, injection), FETCH_TIMEOUT_MS) : Promise.resolve(null),
     wantSessionContext ? raceTimeout(fetchSessionContext(config, sessionName, injection), FETCH_TIMEOUT_MS) : Promise.resolve(null),
     wantDialectic ? raceTimeout(fetchDialectic(config, userPrompt, injection, sessionName), DIALECTIC_TIMEOUT_MS) : Promise.resolve(null),
   ]);
 
-  const userCtx: { context: any; matched?: string[]; queryLabel?: string } | null =
-    userCtxResult?.context
-      ? { context: userCtxResult.context, matched: userCtxResult.matched, queryLabel: userCtxResult.queryLabel }
+  const userCtx: UserCtx | null =
+    userCtxResult && (userCtxResult.context || userCtxResult.conclusions)
+      ? { context: userCtxResult.context, matched: userCtxResult.matched, queryLabel: userCtxResult.queryLabel, conclusions: userCtxResult.conclusions }
       : null;
 
   emitPerTurn(config, injection, userCtx, assistantCtxResult?.context ?? null, sessionCtx, dialectic, sessionLink);
@@ -230,7 +240,7 @@ export async function handleUserPrompt(): Promise<void> {
 function emitPerTurn(
   config: any,
   injection: InjectionConfig,
-  userCtx: { context: any; matched?: string[]; queryLabel?: string } | null,
+  userCtx: UserCtx | null,
   assistantCtx: any | null,
   sessionCtx: SessionContextResult | null,
   dialectic: DialecticResult | null,
@@ -241,9 +251,12 @@ function emitPerTurn(
   const show = (c: PerTurnComponent) => injection.showContents?.includes(c) ?? false;
 
   if (userCtx) {
-    const conclusions = extractConclusions(userCtx.context);
+    // Reranked recall arrives as a ready list; an empty one is reported, not hidden.
+    const conclusions = userCtx.conclusions ?? extractConclusions(userCtx.context);
     if (conclusions.length > 0) {
       parts.push(`Relevant conclusions: ${conclusions.join("; ")}`);
+    }
+    if (conclusions.length > 0 || userCtx.conclusions) {
       visLines.push(visInjectionMessage("user-prompt", { conclusions, matched: userCtx.matched, queryLabel: userCtx.queryLabel, showContents: show("userContext") }));
     }
   }
@@ -266,7 +279,10 @@ function emitPerTurn(
     visLines.push(visDialecticMessage("user-prompt", dialectic.reasoning, dialectic.elapsedMs, dialectic.answer, show("dialectic")));
   }
 
-  if (parts.length === 0) return;
+  if (parts.length === 0) {
+    if (visLines.length > 0) console.log(JSON.stringify({ systemMessage: visLines.join("\n") }));
+    return;
+  }
 
   const visMsg = visLines.join("\n");
   outputContext(config.peerName, parts, sessionLink ? `${sessionLink}\n${visMsg}` : visMsg);
@@ -314,13 +330,73 @@ async function fetchDialectic(config: any, prompt: string, injection: InjectionC
   }
 }
 
+interface UserCtx {
+  context: any;
+  matched?: string[];
+  queryLabel?: string;
+  /** Final list from the reranked recall path; extracted from `context` otherwise. */
+  conclusions?: string[];
+}
+
+/**
+ * Per-turn "userContext" component, topic-aware: search with the session topic's
+ * queries plus the prompt, then keep only candidates the decision model rates
+ * relevant to the topic. The topic comes from the async recall-topic Stop hook
+ * and trails by one turn, so the prompt joins both the queries and the task.
+ * Fails closed: an unreachable reranker injects nothing rather than raw hits.
+ */
+async function fetchRecallContext(
+  config: any,
+  prompt: string,
+  injection: InjectionConfig,
+  recall: RecallPipelineConfig,
+  sessionName: string,
+  sessionId?: string,
+): Promise<UserCtx | null> {
+  const honcho = new Honcho(getHonchoClientOptions(config));
+  const unified = getObservationMode(config) === "unified";
+  const peer = await honcho.peer(unified ? config.peerName : config.aiPeer);
+  const target = unified ? undefined : config.peerName;
+  const startTime = Date.now();
+
+  const cached = sessionId ? readRecallTopic(sessionId) : null;
+  const task = cached ? `${cached.topic}\nLatest user message: ${prompt.slice(0, 500)}` : prompt.slice(0, 1500);
+  const queries = [...(cached?.queries ?? []), prompt.slice(0, 1000)];
+  const perQuery = Math.max(2, Math.ceil(Math.min(recall.candidates ?? 12, RECALL_MAX_CANDIDATES) / queries.length));
+  const boundary = recallBoundary(injection, sessionName);
+
+  const reps = await Promise.all(queries.map((searchQuery) =>
+    peer.representation({
+      ...(target ? { target } : {}),
+      searchQuery,
+      searchTopK: perQuery,
+      searchMaxDistance: recall.maxDistance ?? 0.6,
+      maxConclusions: perQuery,
+      includeMostFrequent: false,
+      ...boundary,
+    }).catch(() => null)
+  ));
+  const candidates = [...new Set(reps.flatMap((r) => extractConclusions({ representation: r })))].slice(0, RECALL_MAX_CANDIDATES);
+  const label = cached ? `topic "${cached.topic.slice(0, 70)}"` : "prompt";
+  if (candidates.length === 0) return { context: null, conclusions: [], queryLabel: `${label}, no candidates` };
+
+  const scores = await scoreRelevance(recall, task, candidates, RERANK_TIMEOUT_MS);
+  if (!scores) {
+    logHook("user-prompt", `Reranker unreachable at ${recall.rerankUrl}; injecting nothing`);
+    return null;
+  }
+  const kept = selectRelevant(candidates, scores, recall.threshold ?? 0.7, recall.maxInject ?? 5);
+  logApiCall("recall (topic + rerank)", "POST", `${queries.length} queries, kept ${kept.length}/${candidates.length}`, Date.now() - startTime, true);
+  return { context: null, conclusions: kept, queryLabel: `${label}, kept ${kept.length}/${candidates.length}` };
+}
+
 /**
  * Per-turn "userContext" component: a prompt-scoped peer.context() fetch for
  * the user peer, observation-mode aware. With a `recallScope` boundary it reads
  * representation() instead: context() is peer-global server-side and would fill
  * unused slots with the most recent conclusions from every other project.
  */
-async function fetchUserContext(config: any, prompt: string, injection: InjectionConfig, sessionName: string): Promise<{ context: any; matched: string[]; queryLabel?: string }> {
+async function fetchUserContext(config: any, prompt: string, injection: InjectionConfig, sessionName: string): Promise<UserCtx> {
   const honcho = new Honcho(getHonchoClientOptions(config));
   const observationMode = getObservationMode(config);
 

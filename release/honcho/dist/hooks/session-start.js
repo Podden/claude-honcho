@@ -16449,7 +16449,8 @@ var DEFAULT_INJECTION = {
   dialecticTemplate: "Return a compact, factual list of anything from the user's history — preferences, prior decisions, relevant past work — that would help with the following. Write in the third person as background notes; do not address the user, ask questions, or offer next steps. If nothing relevant exists, say so in one line. Relevant to: %{user_query}",
   dialecticReasoning: "medium",
   recallScope: "peer",
-  scopes: {}
+  scopes: {},
+  recall: null
 };
 var REASONING_LEVELS = ["minimal", "low", "medium", "high", "max"];
 var HONCHO_BASE_URLS = {
@@ -17336,7 +17337,7 @@ function setMemoryState(phase, detail, sessionId) {
 }
 function setSessionLink(url, name, sessionId) {
   try {
-    writeFileSync3(sessionFile(sessionId), JSON.stringify({ url, name }));
+    writeFileSync3(sessionFile(sessionId), JSON.stringify({ url: url ?? "", name }));
   } catch {}
 }
 function clearSessionFiles(sessionId) {
@@ -17362,6 +17363,9 @@ var symbols2 = {
   sparkle: String.fromCodePoint(10022)
 };
 function honchoSessionUrl(workspace, sessionName) {
+  const cfg = loadConfig2();
+  if (cfg && !/^https?:\/\/([^/]+\.)?honcho\.dev(\/|$)/.test(getHonchoBaseUrl(cfg)))
+    return null;
   return `https://app.honcho.dev/explore?workspace=${encodeURIComponent(workspace)}&view=sessions&session=${encodeURIComponent(sessionName)}`;
 }
 
@@ -17719,5 +17723,5 @@ async function main() {
 // hooks/session-start.ts
 await main();
 
-//# debugId=60B3C949091333FB64756E2164756E21
+//# debugId=7FD4FB76631091E964756E2164756E21
 

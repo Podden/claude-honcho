@@ -36,7 +36,7 @@ function isWakeupBoundary(entry: TranscriptEntry): boolean {
 }
 
 /** True for a real user-typed prompt. Excludes tool_results, isMeta entries, and `<...>` command caveats. */
-function isRealUserPrompt(entry: TranscriptEntry): boolean {
+export function isRealUserPrompt(entry: TranscriptEntry): boolean {
   if (entry.isMeta) return false;
   const mc = entry.message?.content ?? entry.content;
   const text =
@@ -49,7 +49,7 @@ function isRealUserPrompt(entry: TranscriptEntry): boolean {
   return trimmed.length > 0 && !trimmed.startsWith("<");
 }
 
-function assistantText(entry: TranscriptEntry): string {
+export function assistantText(entry: TranscriptEntry): string {
   const mc = entry.message?.content ?? entry.content;
   if (typeof mc === "string") return mc;
   if (Array.isArray(mc)) {

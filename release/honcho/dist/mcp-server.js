@@ -28959,7 +28959,8 @@ var DEFAULT_INJECTION = {
   dialecticTemplate: "Return a compact, factual list of anything from the user's history — preferences, prior decisions, relevant past work — that would help with the following. Write in the third person as background notes; do not address the user, ask questions, or offer next steps. If nothing relevant exists, say so in one line. Relevant to: %{user_query}",
   dialecticReasoning: "medium",
   recallScope: "peer",
-  scopes: {}
+  scopes: {},
+  recall: null
 };
 var REASONING_LEVELS = ["minimal", "low", "medium", "high", "max"];
 var HONCHO_BASE_URLS = {
@@ -29479,6 +29480,9 @@ var symbols = {
   sparkle: String.fromCodePoint(10022)
 };
 function honchoSessionUrl(workspace, sessionName) {
+  const cfg = loadConfig2();
+  if (cfg && !/^https?:\/\/([^/]+\.)?honcho\.dev(\/|$)/.test(getHonchoBaseUrl(cfg)))
+    return null;
   return `https://app.honcho.dev/explore?workspace=${encodeURIComponent(workspace)}&view=sessions&session=${encodeURIComponent(sessionName)}`;
 }
 
@@ -30588,5 +30592,5 @@ ${card.map((item) => `- ${item}`).join(`
 // mcp-server.ts
 await runMcpServer();
 
-//# debugId=2450097EE5ACFF9D64756E2164756E21
+//# debugId=97E6B587611CC3BD64756E2164756E21
 

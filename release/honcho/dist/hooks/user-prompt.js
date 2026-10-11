@@ -16093,8 +16093,8 @@ var require_dist = __commonJS((exports) => {
 
 // src/hooks/user-prompt.ts
 var import_sdk = __toESM(require_dist(), 1);
-import { readFileSync as readFileSync4, existsSync as existsSync6 } from "node:fs";
-import { join as join7 } from "node:path";
+import { readFileSync as readFileSync5, existsSync as existsSync6 } from "node:fs";
+import { join as join8 } from "node:path";
 
 // src/config.ts
 import { homedir as homedir2 } from "os";
@@ -16451,7 +16451,8 @@ var DEFAULT_INJECTION = {
   dialecticTemplate: "Return a compact, factual list of anything from the user's history — preferences, prior decisions, relevant past work — that would help with the following. Write in the third person as background notes; do not address the user, ask questions, or offer next steps. If nothing relevant exists, say so in one line. Relevant to: %{user_query}",
   dialecticReasoning: "medium",
   recallScope: "peer",
-  scopes: {}
+  scopes: {},
+  recall: null
 };
 var REASONING_LEVELS = ["minimal", "low", "medium", "high", "max"];
 var HONCHO_BASE_URLS = {
@@ -17219,6 +17220,101 @@ function formatVerboseList(label, items) {
 ${formatted}`;
 }
 
+// src/recall.ts
+import { homedir as homedir5 } from "os";
+import { join as join6 } from "path";
+import { readFileSync as readFileSync4, writeFileSync as writeFileSync5 } from "fs";
+var DIR = join6(homedir5(), ".honcho");
+function topicFile(sessionId) {
+  return join6(DIR, `recall-${sessionId}.json`);
+}
+function writeRecallTopic(sessionId, topic) {
+  try {
+    writeFileSync5(topicFile(sessionId), JSON.stringify(topic));
+  } catch {}
+}
+function readRecallTopic(sessionId) {
+  try {
+    const t = JSON.parse(readFileSync4(topicFile(sessionId), "utf8"));
+    return typeof t?.topic === "string" && Array.isArray(t.queries) ? t : null;
+  } catch {
+    return null;
+  }
+}
+var TOPIC_SYSTEM_PROMPT = "You maintain the search context of a long-term memory attached to a coding assistant. " + "Read the recent conversation and return JSON only: " + '{"topic": "one English sentence naming the concrete task currently being worked on and the systems, services, hosts, repos or files involved", ' + '"queries": ["2 to 3 short English search queries that would find long-term facts about the user relevant to this task"]}. ' + "Describe the work itself, not remarks about the assistant's behavior.";
+async function generateTopic(cfg, conversation, timeoutMs = 60000) {
+  try {
+    const res = await fetch(`${cfg.topicBaseUrl.replace(/\/$/, "")}/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(timeoutMs),
+      body: JSON.stringify({
+        model: cfg.topicModel,
+        messages: [
+          { role: "system", content: TOPIC_SYSTEM_PROMPT },
+          { role: "user", content: conversation }
+        ],
+        reasoning_effort: "none",
+        response_format: { type: "json_object" },
+        max_tokens: 300,
+        temperature: 0
+      })
+    });
+    if (!res.ok)
+      return null;
+    const content = (await res.json())?.choices?.[0]?.message?.content;
+    return parseTopic(typeof content === "string" ? content : "");
+  } catch {
+    return null;
+  }
+}
+function parseTopic(content) {
+  const json = content.slice(content.indexOf("{"), content.lastIndexOf("}") + 1);
+  try {
+    const t = JSON.parse(json);
+    const topic = typeof t.topic === "string" ? t.topic.trim() : "";
+    const queries = Array.isArray(t.queries) ? t.queries.filter((q) => typeof q === "string" && q.trim()).slice(0, 3) : [];
+    return topic ? { topic, queries, updatedAt: Date.now() } : null;
+  } catch {
+    return null;
+  }
+}
+var RELEVANT_QUESTION = {
+  relevant: {
+    type: "choice",
+    instructions: "Would `fact` help an assistant working on `task`?",
+    criteria: {
+      A: "yes: the fact is about the same system, service, host or problem as the task",
+      B: "no: the fact is about a different project, tool or topic and would only distract"
+    }
+  }
+};
+async function scoreRelevance(cfg, task, facts, timeoutMs) {
+  const url = `${cfg.rerankUrl.replace(/\/$/, "")}/v1/systemone`;
+  const signal = AbortSignal.timeout(timeoutMs);
+  try {
+    return await Promise.all(facts.map(async (fact) => {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal,
+        body: JSON.stringify({ state: { task, fact }, questions: RELEVANT_QUESTION })
+      });
+      if (!res.ok)
+        throw new Error(`HTTP ${res.status}`);
+      const p = (await res.json())?.answers?.relevant?.probabilities?.A;
+      if (typeof p !== "number")
+        throw new Error("no probability");
+      return p;
+    }));
+  } catch {
+    return null;
+  }
+}
+function selectRelevant(facts, scores, threshold, maxInject) {
+  return facts.map((fact, i) => ({ fact, p: scores[i] })).filter((x) => x.p >= threshold).sort((a, b) => b.p - a.p).slice(0, maxInject).map((x) => x.fact);
+}
+
 // src/styles.ts
 var symbols2 = {
   check: String.fromCodePoint(10003),
@@ -17232,28 +17328,31 @@ var symbols2 = {
   sparkle: String.fromCodePoint(10022)
 };
 function honchoSessionUrl(workspace, sessionName) {
+  const cfg = loadConfig2();
+  if (cfg && !/^https?:\/\/([^/]+\.)?honcho\.dev(\/|$)/.test(getHonchoBaseUrl(cfg)))
+    return null;
   return `https://app.honcho.dev/explore?workspace=${encodeURIComponent(workspace)}&view=sessions&session=${encodeURIComponent(sessionName)}`;
 }
 
 // src/state.ts
-import { homedir as homedir5 } from "os";
-import { join as join6 } from "path";
-import { writeFileSync as writeFileSync5, unlinkSync } from "fs";
-var DIR = join6(homedir5(), ".honcho");
+import { homedir as homedir6 } from "os";
+import { join as join7 } from "path";
+import { writeFileSync as writeFileSync6, unlinkSync } from "fs";
+var DIR2 = join7(homedir6(), ".honcho");
 function stateFile(sessionId) {
-  return join6(DIR, sessionId ? `state-${sessionId}.json` : "state.json");
+  return join7(DIR2, sessionId ? `state-${sessionId}.json` : "state.json");
 }
 function sessionFile(sessionId) {
-  return join6(DIR, sessionId ? `session-${sessionId}.json` : "session.json");
+  return join7(DIR2, sessionId ? `session-${sessionId}.json` : "session.json");
 }
 function setMemoryState(phase, detail, sessionId) {
   try {
-    writeFileSync5(stateFile(sessionId), JSON.stringify({ phase, since: Date.now(), detail }));
+    writeFileSync6(stateFile(sessionId), JSON.stringify({ phase, since: Date.now(), detail }));
   } catch {}
 }
 function setSessionLink(url, name, sessionId) {
   try {
-    writeFileSync5(sessionFile(sessionId), JSON.stringify({ url, name }));
+    writeFileSync6(sessionFile(sessionId), JSON.stringify({ url: url ?? "", name }));
   } catch {}
 }
 function clearSessionFiles(sessionId) {
@@ -17300,6 +17399,9 @@ var SKIP_CONTEXT_PATTERNS = [
 ];
 var FETCH_TIMEOUT_MS = 4000;
 var DIALECTIC_TIMEOUT_MS = 120000;
+var RECALL_TIMEOUT_MS = 8000;
+var RERANK_TIMEOUT_MS = 6000;
+var RECALL_MAX_CANDIDATES = 16;
 function raceTimeout(p, ms) {
   return Promise.race([
     p.catch(() => null),
@@ -17327,17 +17429,17 @@ function shouldSkipContextRetrieval(prompt) {
   return SKIP_CONTEXT_PATTERNS.some((p) => p.test(prompt.trim()));
 }
 function formatSessionLink(sessionUrl) {
-  return `view your session in honcho GUI: ${sessionUrl}`;
+  return sessionUrl ? `view your session in honcho GUI: ${sessionUrl}` : undefined;
 }
 function readVersionNag() {
   const dataDir = process.env.CLAUDE_PLUGIN_DATA;
   if (!dataDir)
     return;
-  const flag = join7(dataDir, ".version-stale");
+  const flag = join8(dataDir, ".version-stale");
   if (!existsSync6(flag))
     return;
   try {
-    return readFileSync4(flag, "utf8").trim() || undefined;
+    return readFileSync5(flag, "utf8").trim() || undefined;
   } catch {
     return;
   }
@@ -17394,12 +17496,12 @@ async function handleUserPrompt() {
   }
   setMemoryState("recalling", undefined, hookInput.session_id);
   const [userCtxResult, assistantCtxResult, sessionCtx, dialectic] = await Promise.all([
-    wantUserContext ? raceTimeout(fetchUserContext(config, userPrompt, injection, sessionName), FETCH_TIMEOUT_MS) : Promise.resolve(null),
+    !wantUserContext ? Promise.resolve(null) : injection.recall ? raceTimeout(fetchRecallContext(config, userPrompt, injection, injection.recall, sessionName, hookInput.session_id), RECALL_TIMEOUT_MS) : raceTimeout(fetchUserContext(config, userPrompt, injection, sessionName), FETCH_TIMEOUT_MS),
     wantAssistantContext ? raceTimeout(fetchAssistantContext(config, userPrompt, injection), FETCH_TIMEOUT_MS) : Promise.resolve(null),
     wantSessionContext ? raceTimeout(fetchSessionContext(config, sessionName, injection), FETCH_TIMEOUT_MS) : Promise.resolve(null),
     wantDialectic ? raceTimeout(fetchDialectic(config, userPrompt, injection, sessionName), DIALECTIC_TIMEOUT_MS) : Promise.resolve(null)
   ]);
-  const userCtx = userCtxResult?.context ? { context: userCtxResult.context, matched: userCtxResult.matched, queryLabel: userCtxResult.queryLabel } : null;
+  const userCtx = userCtxResult && (userCtxResult.context || userCtxResult.conclusions) ? { context: userCtxResult.context, matched: userCtxResult.matched, queryLabel: userCtxResult.queryLabel, conclusions: userCtxResult.conclusions } : null;
   emitPerTurn(config, injection, userCtx, assistantCtxResult?.context ?? null, sessionCtx, dialectic, sessionLink);
   process.exit(0);
 }
@@ -17408,9 +17510,11 @@ function emitPerTurn(config, injection, userCtx, assistantCtx, sessionCtx, diale
   const visLines = [];
   const show = (c) => injection.showContents?.includes(c) ?? false;
   if (userCtx) {
-    const conclusions = extractConclusions(userCtx.context);
+    const conclusions = userCtx.conclusions ?? extractConclusions(userCtx.context);
     if (conclusions.length > 0) {
       parts.push(`Relevant conclusions: ${conclusions.join("; ")}`);
+    }
+    if (conclusions.length > 0 || userCtx.conclusions) {
       visLines.push(visInjectionMessage("user-prompt", { conclusions, matched: userCtx.matched, queryLabel: userCtx.queryLabel, showContents: show("userContext") }));
     }
   }
@@ -17431,8 +17535,12 @@ ${sessionCtx.lines.join(`
     parts.push(`Dialectic recall: ${dialectic.answer}`);
     visLines.push(visDialecticMessage("user-prompt", dialectic.reasoning, dialectic.elapsedMs, dialectic.answer, show("dialectic")));
   }
-  if (parts.length === 0)
+  if (parts.length === 0) {
+    if (visLines.length > 0)
+      console.log(JSON.stringify({ systemMessage: visLines.join(`
+`) }));
     return;
+  }
   const visMsg = visLines.join(`
 `);
   outputContext(config.peerName, parts, sessionLink ? `${sessionLink}
@@ -17461,6 +17569,40 @@ async function fetchDialectic(config, prompt, injection, sessionName) {
     logHook("user-prompt", `Dialectic fetch failed: ${e}`);
     return null;
   }
+}
+async function fetchRecallContext(config, prompt, injection, recall, sessionName, sessionId) {
+  const honcho = new import_sdk.Honcho(getHonchoClientOptions(config));
+  const unified = getObservationMode(config) === "unified";
+  const peer = await honcho.peer(unified ? config.peerName : config.aiPeer);
+  const target = unified ? undefined : config.peerName;
+  const startTime = Date.now();
+  const cached = sessionId ? readRecallTopic(sessionId) : null;
+  const task = cached ? `${cached.topic}
+Latest user message: ${prompt.slice(0, 500)}` : prompt.slice(0, 1500);
+  const queries = [...cached?.queries ?? [], prompt.slice(0, 1000)];
+  const perQuery = Math.max(2, Math.ceil(Math.min(recall.candidates ?? 12, RECALL_MAX_CANDIDATES) / queries.length));
+  const boundary = recallBoundary(injection, sessionName);
+  const reps = await Promise.all(queries.map((searchQuery) => peer.representation({
+    ...target ? { target } : {},
+    searchQuery,
+    searchTopK: perQuery,
+    searchMaxDistance: recall.maxDistance ?? 0.6,
+    maxConclusions: perQuery,
+    includeMostFrequent: false,
+    ...boundary
+  }).catch(() => null)));
+  const candidates = [...new Set(reps.flatMap((r) => extractConclusions({ representation: r })))].slice(0, RECALL_MAX_CANDIDATES);
+  const label = cached ? `topic "${cached.topic.slice(0, 70)}"` : "prompt";
+  if (candidates.length === 0)
+    return { context: null, conclusions: [], queryLabel: `${label}, no candidates` };
+  const scores = await scoreRelevance(recall, task, candidates, RERANK_TIMEOUT_MS);
+  if (!scores) {
+    logHook("user-prompt", `Reranker unreachable at ${recall.rerankUrl}; injecting nothing`);
+    return null;
+  }
+  const kept = selectRelevant(candidates, scores, recall.threshold ?? 0.7, recall.maxInject ?? 5);
+  logApiCall("recall (topic + rerank)", "POST", `${queries.length} queries, kept ${kept.length}/${candidates.length}`, Date.now() - startTime, true);
+  return { context: null, conclusions: kept, queryLabel: `${label}, kept ${kept.length}/${candidates.length}` };
 }
 async function fetchUserContext(config, prompt, injection, sessionName) {
   const honcho = new import_sdk.Honcho(getHonchoClientOptions(config));
@@ -17578,5 +17720,5 @@ async function main() {
 // hooks/user-prompt.ts
 await main();
 
-//# debugId=A115DDCB35317E9364756E2164756E21
+//# debugId=3FE2EF516064B35C64756E2164756E21
 
