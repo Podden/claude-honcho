@@ -16098,7 +16098,7 @@ var import_sdk = __toESM(require_dist(), 1);
 import { homedir as homedir2 } from "os";
 import { join as join3, basename, dirname, resolve, sep } from "path";
 import { fileURLToPath } from "url";
-import { existsSync as existsSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync2, statSync, writeFileSync as writeFileSync2 } from "fs";
+import { chmodSync, existsSync as existsSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync2, statSync, writeFileSync as writeFileSync2 } from "fs";
 
 // src/git.ts
 import { execSync } from "child_process";
@@ -16671,6 +16671,11 @@ function mergeWithEnvVars(config) {
   }
   return config;
 }
+function writeConfigFile(data) {
+  if (existsSync3(CONFIG_FILE))
+    chmodSync(CONFIG_FILE, 384);
+  writeFileSync2(CONFIG_FILE, JSON.stringify(data, null, 2), { mode: 384 });
+}
 function saveConfig(config) {
   if (!existsSync3(CONFIG_DIR)) {
     mkdirSync2(CONFIG_DIR, { recursive: true });
@@ -16701,9 +16706,9 @@ function saveConfig(config) {
   setHostIfExplicit("aiPeer", config.aiPeer, existing.aiPeer ?? DEFAULT_AI_PEER[host]);
   const enabledForSave = process.env.HONCHO_ENABLED === "false" && config.enabled === false ? existingHost.enabled : config.enabled;
   const loggingForSave = process.env.HONCHO_LOGGING === "false" && config.logging === false ? existingHost.logging : config.logging;
+  const saveMessagesForSave = process.env.HONCHO_SAVE_MESSAGES === "false" && config.saveMessages === false ? existingHost.saveMessages : config.saveMessages;
   setHostIfExplicit("enabled", enabledForSave, existing.enabled);
   setHostIfExplicit("logging", loggingForSave, existing.logging);
-  const saveMessagesForSave = process.env.HONCHO_SAVE_MESSAGES === "false" && config.saveMessages === false ? existingHost.saveMessages : config.saveMessages;
   setHostIfExplicit("saveMessages", saveMessagesForSave, existing.saveMessages);
   setHostIfExplicit("sessionStrategy", config.sessionStrategy, existing.sessionStrategy);
   setHostIfExplicit("sessionPeerPrefix", config.sessionPeerPrefix, existing.sessionPeerPrefix);
@@ -16719,7 +16724,7 @@ function saveConfig(config) {
     hostEntry.apiKey = existingHost.apiKey;
   }
   existing.hosts[host] = hostEntry;
-  writeFileSync2(CONFIG_FILE, JSON.stringify(existing, null, 2));
+  writeConfigFile(existing);
 }
 function saveRootField(field, value) {
   if (!existsSync3(CONFIG_DIR)) {
@@ -16732,7 +16737,7 @@ function saveRootField(field, value) {
     } catch {}
   }
   existing[field] = value;
-  writeFileSync2(CONFIG_FILE, JSON.stringify(existing, null, 2));
+  writeConfigFile(existing);
 }
 function resolveWorktreeMainRoot(dir) {
   try {
@@ -16896,6 +16901,9 @@ function getHonchoClientOptions(config) {
     maxRetries: 1,
     defaultHeaders: getTelemetryHeaders()
   };
+}
+function isProductionEndpoint(config) {
+  return getHonchoBaseUrl(config) === HONCHO_BASE_URLS.production;
 }
 function getEndpointInfo(config) {
   if (config.endpoint?.baseUrl) {
@@ -17186,15 +17194,24 @@ function visSessionContextMessage(hookName, lines, tokenCount, showContents = fa
   return body ? `${head}
 ${body}` : head;
 }
-function visComposedInjection(hookName, labels) {
-  const summary = labels.length ? `injected ${labels.join(" + ")}` : "nothing to inject";
-  return formatLine("in", hookName, summary);
+function visComposedInjection(hookName, labels, notes = []) {
+  const head = labels.length ? `injected ${labels.join(" + ")}` : "nothing injected";
+  return formatLine("in", hookName, [head, ...notes].join(" · "));
+}
+function visEmptyComponent(hookName, message, unavailable = false) {
+  return formatLine(unavailable ? "warn" : "info", hookName, message);
+}
+function visAnchorSummary(hookName, items, elapsedMs) {
+  const what = items.length ? items.join(" · ") : "session identity only";
+  return formatLine("in", hookName, `anchored ${what} (${(elapsedMs / 1000).toFixed(1)}s)`);
 }
 function visCapture(summary) {
   visMessage("out", "post-tool-use", `captured: ${summary}`);
 }
-function visSkipMessage(hookName, reason) {
-  visMessage("info", hookName, `skipped (${reason})`);
+function visSkipMessage(hookName, reason, banner) {
+  const line = formatLine("info", hookName, `skipped (${reason})`);
+  console.log(JSON.stringify({ systemMessage: banner ? `${banner}
+${line}` : line }));
 }
 function visStopMessage(direction, message) {
   visMessage(direction, "response", message);
@@ -17242,40 +17259,37 @@ function clearVerboseLog() {
   ensureVerboseLog();
   writeFileSync4(VERBOSE_LOG, "");
 }
-function formatVerboseBlock(label, data) {
-  if (!data)
-    return "";
-  const separator = "─".repeat(60);
-  const content = data.length > 3000 ? data.slice(0, 3000) + `
-... (${data.length - 3000} more chars)` : data;
-  return `
-[verbose] ${label}
-${separator}
-${content}
-${separator}`;
-}
-function formatVerboseList(label, items) {
-  if (!items || items.length === 0)
-    return "";
-  const formatted = items.map((item) => `  • ${item}`).join(`
-`);
-  return `
-[verbose] ${label} (${items.length} items)
-${formatted}`;
-}
 
 // src/hooks/post-tool-use.ts
+var TRIVIAL_COMMANDS = new Set([
+  "cd",
+  "ls",
+  "pwd",
+  "echo",
+  "cat",
+  "head",
+  "tail",
+  "which",
+  "type",
+  "git status",
+  "git log",
+  "git diff"
+]);
+var COMMAND_WRAPPERS = new Set(["rtk", "sudo", "doas", "env", "time", "command", "nice"]);
+function isTrivialCommand(command) {
+  const tokens = command.trim().split(/\s+/);
+  while (tokens.length > 1 && COMMAND_WRAPPERS.has(tokens[0])) {
+    tokens.shift();
+  }
+  return TRIVIAL_COMMANDS.has(tokens[0]) || TRIVIAL_COMMANDS.has(tokens.slice(0, 2).join(" "));
+}
 function shouldLogTool(toolName, toolInput) {
   const significantTools = new Set(["Write", "Edit", "Bash", "Task", "NotebookEdit"]);
   if (!significantTools.has(toolName)) {
     return false;
   }
-  if (toolName === "Bash") {
-    const command = toolInput.command || "";
-    const trivialCommands = ["cd", "ls", "pwd", "echo", "cat", "head", "tail", "which", "type", "git status", "git log", "git diff"];
-    if (trivialCommands.some((cmd) => command.trim().startsWith(cmd))) {
-      return false;
-    }
+  if (toolName === "Bash" && isTrivialCommand(toolInput.command || "")) {
+    return false;
   }
   return true;
 }
@@ -17405,7 +17419,7 @@ async function handlePostToolUse() {
   if (!config) {
     process.exit(0);
   }
-  if (!isPluginEnabled()) {
+  if (!isPluginEnabled() || config.saveMessages === false || config.saveToolUse !== true) {
     process.exit(0);
   }
   let hookInput = {};
@@ -17427,14 +17441,15 @@ async function handlePostToolUse() {
   }
   const summary = redactSecrets(formatToolSummary(toolName, toolInput, toolResponse), config.redactPatterns);
   logHook("post-tool-use", summary, { tool: toolName });
-  visCapture(summary);
-  await logToHonchoAsync(config, cwd, summary).catch((e) => logHook("post-tool-use", `Upload failed: ${e}`, { error: String(e) }));
+  try {
+    await logToHonchoAsync(config, cwd, summary);
+    visCapture(summary);
+  } catch (e) {
+    logHook("post-tool-use", `Upload failed: ${e}`, { error: String(e) });
+  }
   process.exit(0);
 }
 async function logToHonchoAsync(config, cwd, summary) {
-  if (config.saveMessages === false || config.saveToolUse !== true) {
-    return;
-  }
   const honcho = new import_sdk.Honcho(getHonchoClientOptions(config));
   const sessionName = getSessionName(cwd);
   const session = await honcho.session(sessionName);
@@ -17458,5 +17473,5 @@ async function main() {
 // hooks/post-tool-use.ts
 await main();
 
-//# debugId=13BE86DD7121190464756E2164756E21
+//# debugId=3CA92D2B6180102764756E2164756E21
 

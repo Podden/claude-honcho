@@ -16098,7 +16098,7 @@ var import_sdk = __toESM(require_dist(), 1);
 import { homedir as homedir2 } from "os";
 import { join as join3, basename, dirname, resolve, sep } from "path";
 import { fileURLToPath } from "url";
-import { existsSync as existsSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync2, statSync, writeFileSync as writeFileSync2 } from "fs";
+import { chmodSync, existsSync as existsSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync2, statSync, writeFileSync as writeFileSync2 } from "fs";
 
 // src/git.ts
 import { execSync } from "child_process";
@@ -16671,6 +16671,11 @@ function mergeWithEnvVars(config) {
   }
   return config;
 }
+function writeConfigFile(data) {
+  if (existsSync3(CONFIG_FILE))
+    chmodSync(CONFIG_FILE, 384);
+  writeFileSync2(CONFIG_FILE, JSON.stringify(data, null, 2), { mode: 384 });
+}
 function saveConfig(config) {
   if (!existsSync3(CONFIG_DIR)) {
     mkdirSync2(CONFIG_DIR, { recursive: true });
@@ -16701,9 +16706,9 @@ function saveConfig(config) {
   setHostIfExplicit("aiPeer", config.aiPeer, existing.aiPeer ?? DEFAULT_AI_PEER[host]);
   const enabledForSave = process.env.HONCHO_ENABLED === "false" && config.enabled === false ? existingHost.enabled : config.enabled;
   const loggingForSave = process.env.HONCHO_LOGGING === "false" && config.logging === false ? existingHost.logging : config.logging;
+  const saveMessagesForSave = process.env.HONCHO_SAVE_MESSAGES === "false" && config.saveMessages === false ? existingHost.saveMessages : config.saveMessages;
   setHostIfExplicit("enabled", enabledForSave, existing.enabled);
   setHostIfExplicit("logging", loggingForSave, existing.logging);
-  const saveMessagesForSave = process.env.HONCHO_SAVE_MESSAGES === "false" && config.saveMessages === false ? existingHost.saveMessages : config.saveMessages;
   setHostIfExplicit("saveMessages", saveMessagesForSave, existing.saveMessages);
   setHostIfExplicit("sessionStrategy", config.sessionStrategy, existing.sessionStrategy);
   setHostIfExplicit("sessionPeerPrefix", config.sessionPeerPrefix, existing.sessionPeerPrefix);
@@ -16719,7 +16724,7 @@ function saveConfig(config) {
     hostEntry.apiKey = existingHost.apiKey;
   }
   existing.hosts[host] = hostEntry;
-  writeFileSync2(CONFIG_FILE, JSON.stringify(existing, null, 2));
+  writeConfigFile(existing);
 }
 function saveRootField(field, value) {
   if (!existsSync3(CONFIG_DIR)) {
@@ -16732,7 +16737,7 @@ function saveRootField(field, value) {
     } catch {}
   }
   existing[field] = value;
-  writeFileSync2(CONFIG_FILE, JSON.stringify(existing, null, 2));
+  writeConfigFile(existing);
 }
 function resolveWorktreeMainRoot(dir) {
   try {
@@ -16897,6 +16902,9 @@ function getHonchoClientOptions(config) {
     defaultHeaders: getTelemetryHeaders()
   };
 }
+function isProductionEndpoint(config) {
+  return getHonchoBaseUrl(config) === HONCHO_BASE_URLS.production;
+}
 function getEndpointInfo(config) {
   if (config.endpoint?.baseUrl) {
     return { type: "custom", url: config.endpoint.baseUrl };
@@ -16925,6 +16933,8 @@ ${recall}
 function renderSessionStart(components, data) {
   const parts = [];
   const labels = [];
+  const notes = [];
+  const missing = (data2, name, empty) => notes.push(data2 == null ? `${name} unavailable` : `${name} ${empty}`);
   for (const component of components) {
     switch (component) {
       case "directives": {
@@ -16938,6 +16948,8 @@ ${honchoDirectives(data.remember === true)}`);
         if (summary) {
           parts.push(`Session summary: ${summary}`);
           labels.push("summary");
+        } else {
+          missing(data.summary, "summary", "none yet");
         }
         break;
       }
@@ -16947,6 +16959,8 @@ ${honchoDirectives(data.remember === true)}`);
           parts.push(`Honcho stored representation of the user:
 ${rep}`);
           labels.push("representation");
+        } else {
+          missing(data.representation, "representation", "empty");
         }
         break;
       }
@@ -16960,6 +16974,8 @@ ${rep}`);
         if (card.length) {
           parts.push(`Profile: ${card.join("; ")}`);
           labels.push(`peer card (${card.length} items)`);
+        } else {
+          missing(data.peerCard, "peer card", "empty");
         }
         break;
       }
@@ -16967,7 +16983,7 @@ ${rep}`);
   }
   return { content: parts.join(`
 
-`), labels };
+`), labels, notes };
 }
 
 // src/spinner.ts
@@ -17362,11 +17378,10 @@ var symbols2 = {
   pipe: String.fromCodePoint(9474),
   sparkle: String.fromCodePoint(10022)
 };
-function honchoSessionUrl(workspace, sessionName) {
-  const cfg = loadConfig2();
-  if (cfg && !/^https?:\/\/([^/]+\.)?honcho\.dev(\/|$)/.test(getHonchoBaseUrl(cfg)))
+function honchoSessionUrl(config, sessionName) {
+  if (!isProductionEndpoint(config))
     return null;
-  return `https://app.honcho.dev/explore?workspace=${encodeURIComponent(workspace)}&view=sessions&session=${encodeURIComponent(sessionName)}`;
+  return `https://app.honcho.dev/explore?workspace=${encodeURIComponent(config.workspace)}&view=sessions&session=${encodeURIComponent(sessionName)}`;
 }
 
 // src/log.ts
@@ -17498,15 +17513,24 @@ function visSessionContextMessage(hookName, lines, tokenCount, showContents = fa
   return body ? `${head}
 ${body}` : head;
 }
-function visComposedInjection(hookName, labels) {
-  const summary = labels.length ? `injected ${labels.join(" + ")}` : "nothing to inject";
-  return formatLine("in", hookName, summary);
+function visComposedInjection(hookName, labels, notes = []) {
+  const head = labels.length ? `injected ${labels.join(" + ")}` : "nothing injected";
+  return formatLine("in", hookName, [head, ...notes].join(" · "));
+}
+function visEmptyComponent(hookName, message, unavailable = false) {
+  return formatLine(unavailable ? "warn" : "info", hookName, message);
+}
+function visAnchorSummary(hookName, items, elapsedMs) {
+  const what = items.length ? items.join(" · ") : "session identity only";
+  return formatLine("in", hookName, `anchored ${what} (${(elapsedMs / 1000).toFixed(1)}s)`);
 }
 function visCapture(summary) {
   visMessage("out", "post-tool-use", `captured: ${summary}`);
 }
-function visSkipMessage(hookName, reason) {
-  visMessage("info", hookName, `skipped (${reason})`);
+function visSkipMessage(hookName, reason, banner) {
+  const line = formatLine("info", hookName, `skipped (${reason})`);
+  console.log(JSON.stringify({ systemMessage: banner ? `${banner}
+${line}` : line }));
 }
 function visStopMessage(direction, message) {
   visMessage(direction, "response", message);
@@ -17554,27 +17578,6 @@ function clearVerboseLog() {
   ensureVerboseLog();
   writeFileSync5(VERBOSE_LOG, "");
 }
-function formatVerboseBlock(label, data) {
-  if (!data)
-    return "";
-  const separator = "─".repeat(60);
-  const content = data.length > 3000 ? data.slice(0, 3000) + `
-... (${data.length - 3000} more chars)` : data;
-  return `
-[verbose] ${label}
-${separator}
-${content}
-${separator}`;
-}
-function formatVerboseList(label, items) {
-  if (!items || items.length === 0)
-    return "";
-  const formatted = items.map((item) => `  • ${item}`).join(`
-`);
-  return `
-[verbose] ${label} (${items.length} items)
-${formatted}`;
-}
 
 // src/hooks/session-start.ts
 var CONTEXT_FETCH_TIMEOUT_MS = 1e4;
@@ -17587,8 +17590,8 @@ function raceTimeout(p, ms) {
 async function handleSessionStart() {
   const config = loadConfig2();
   if (!config) {
-    console.error("[honcho] Not configured. Run: honcho init");
-    process.exit(1);
+    console.log(JSON.stringify({ systemMessage: "[honcho] Not configured. Run /honcho:setup to connect Honcho memory." }));
+    process.exit(0);
   }
   if (!isPluginEnabled()) {
     process.exit(0);
@@ -17607,8 +17610,17 @@ async function handleSessionStart() {
   }
   const sessionName = getSessionName(cwd, claudeInstanceId);
   setLogContext(cwd, sessionName);
-  clearVerboseLog();
-  resetMessageCount();
+  const source = hookInput.source ?? "startup";
+  if (source === "resume") {
+    setCachedSessionId(cwd, sessionName, sessionName, claudeInstanceId);
+    setSessionLink(honchoSessionUrl(config, sessionName), sessionName, claudeInstanceId);
+    logHook("session-start", "Resumed conversation; skipping injection");
+    process.exit(0);
+  }
+  if (source !== "compact") {
+    clearVerboseLog();
+    resetMessageCount();
+  }
   const previousGitState = getCachedGitState(cwd);
   const currentGitState = captureGitState(cwd);
   const gitChanges = currentGitState ? detectGitChanges(previousGitState, currentGitState) : [];
@@ -17618,7 +17630,7 @@ async function handleSessionStart() {
   const spinner = new Spinner({ style: "neural" });
   spinner.start(`${sessionName} · loading memory`);
   setMemoryState("loading", sessionName, claudeInstanceId);
-  setSessionLink(honchoSessionUrl(config.workspace, sessionName), sessionName, claudeInstanceId);
+  setSessionLink(honchoSessionUrl(config, sessionName), sessionName, claudeInstanceId);
   try {
     logHook("session-start", `Starting session in ${cwd}`, { branch: currentGitState?.branch });
     logFlow("init", `workspace: ${config.workspace}, peers: ${config.peerName}/${config.aiPeer}`);
@@ -17690,21 +17702,24 @@ async function handleSessionStart() {
     const contextValue = userContextResult.status === "fulfilled" ? userContextResult.value : null;
     const summaryValue = summaryResult.status === "fulfilled" ? summaryResult.value : null;
     const rendered = renderSessionStart(startComponents, {
-      summary: summaryValue?.longSummary?.content ?? null,
-      peerCard: contextValue?.peerCard ?? null,
-      representation: contextValue?.representation ?? null,
+      summary: summaryValue ? summaryValue.longSummary?.content ?? "" : null,
+      peerCard: contextValue ? contextValue.peerCard ?? [] : null,
+      representation: contextValue ? contextValue.representation ?? "" : null,
       remember: config.rememberTool === true
     });
     spinner.stop();
     setMemoryState("idle", undefined, claudeInstanceId);
+    const systemMessage = visComposedInjection("session-start", rendered.labels, rendered.notes);
     if (rendered.content) {
       console.log(JSON.stringify({
         hookSpecificOutput: {
           hookEventName: "SessionStart",
           additionalContext: `[Honcho Memory for ${config.peerName}]: ${rendered.content}`
         },
-        systemMessage: visComposedInjection("session-start", rendered.labels)
+        systemMessage
       }));
+    } else if (rendered.notes.length) {
+      console.log(JSON.stringify({ systemMessage }));
     }
     logFlow("complete", `Cache warmed: ${successCount}/1 context · injected: ${rendered.labels.join(", ") || "none"}`);
     process.exit(0);
@@ -17723,5 +17738,5 @@ async function main() {
 // hooks/session-start.ts
 await main();
 
-//# debugId=7FD4FB76631091E964756E2164756E21
+//# debugId=5608DF530FB2230264756E2164756E21
 

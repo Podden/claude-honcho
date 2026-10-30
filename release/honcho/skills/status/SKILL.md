@@ -26,5 +26,5 @@ After running the script, present a concise status card echoing the runner outpu
 ## Implementation
 
 ```bash
-node ${CLAUDE_PLUGIN_ROOT}/dist/skills/status-runner.js
+node "${CLAUDE_PLUGIN_ROOT}/dist/skills/status-runner.js"
 ```

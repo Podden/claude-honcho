@@ -28608,7 +28608,7 @@ import { readFileSync as readFileSync3 } from "fs";
 import { homedir as homedir2 } from "os";
 import { join as join3, basename, dirname, resolve, sep } from "path";
 import { fileURLToPath } from "url";
-import { existsSync as existsSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync2, statSync, writeFileSync as writeFileSync2 } from "fs";
+import { chmodSync, existsSync as existsSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync2, statSync, writeFileSync as writeFileSync2 } from "fs";
 
 // src/git.ts
 import { execSync } from "child_process";
@@ -29181,6 +29181,11 @@ function mergeWithEnvVars(config2) {
   }
   return config2;
 }
+function writeConfigFile(data) {
+  if (existsSync3(CONFIG_FILE))
+    chmodSync(CONFIG_FILE, 384);
+  writeFileSync2(CONFIG_FILE, JSON.stringify(data, null, 2), { mode: 384 });
+}
 function saveConfig(config2) {
   if (!existsSync3(CONFIG_DIR)) {
     mkdirSync2(CONFIG_DIR, { recursive: true });
@@ -29211,9 +29216,9 @@ function saveConfig(config2) {
   setHostIfExplicit("aiPeer", config2.aiPeer, existing.aiPeer ?? DEFAULT_AI_PEER[host]);
   const enabledForSave = process.env.HONCHO_ENABLED === "false" && config2.enabled === false ? existingHost.enabled : config2.enabled;
   const loggingForSave = process.env.HONCHO_LOGGING === "false" && config2.logging === false ? existingHost.logging : config2.logging;
+  const saveMessagesForSave = process.env.HONCHO_SAVE_MESSAGES === "false" && config2.saveMessages === false ? existingHost.saveMessages : config2.saveMessages;
   setHostIfExplicit("enabled", enabledForSave, existing.enabled);
   setHostIfExplicit("logging", loggingForSave, existing.logging);
-  const saveMessagesForSave = process.env.HONCHO_SAVE_MESSAGES === "false" && config2.saveMessages === false ? existingHost.saveMessages : config2.saveMessages;
   setHostIfExplicit("saveMessages", saveMessagesForSave, existing.saveMessages);
   setHostIfExplicit("sessionStrategy", config2.sessionStrategy, existing.sessionStrategy);
   setHostIfExplicit("sessionPeerPrefix", config2.sessionPeerPrefix, existing.sessionPeerPrefix);
@@ -29229,7 +29234,7 @@ function saveConfig(config2) {
     hostEntry.apiKey = existingHost.apiKey;
   }
   existing.hosts[host] = hostEntry;
-  writeFileSync2(CONFIG_FILE, JSON.stringify(existing, null, 2));
+  writeConfigFile(existing);
 }
 function saveRootField(field, value) {
   if (!existsSync3(CONFIG_DIR)) {
@@ -29242,7 +29247,7 @@ function saveRootField(field, value) {
     } catch {}
   }
   existing[field] = value;
-  writeFileSync2(CONFIG_FILE, JSON.stringify(existing, null, 2));
+  writeConfigFile(existing);
 }
 function resolveWorktreeMainRoot(dir) {
   try {
@@ -29407,6 +29412,9 @@ function getHonchoClientOptions(config2) {
     defaultHeaders: getTelemetryHeaders()
   };
 }
+function isProductionEndpoint(config2) {
+  return getHonchoBaseUrl(config2) === HONCHO_BASE_URLS.production;
+}
 function getEndpointInfo(config2) {
   if (config2.endpoint?.baseUrl) {
     return { type: "custom", url: config2.endpoint.baseUrl };
@@ -29479,11 +29487,10 @@ var symbols = {
   pipe: String.fromCodePoint(9474),
   sparkle: String.fromCodePoint(10022)
 };
-function honchoSessionUrl(workspace, sessionName) {
-  const cfg = loadConfig2();
-  if (cfg && !/^https?:\/\/([^/]+\.)?honcho\.dev(\/|$)/.test(getHonchoBaseUrl(cfg)))
+function honchoSessionUrl(config2, sessionName) {
+  if (!isProductionEndpoint(config2))
     return null;
-  return `https://app.honcho.dev/explore?workspace=${encodeURIComponent(workspace)}&view=sessions&session=${encodeURIComponent(sessionName)}`;
+  return `https://app.honcho.dev/explore?workspace=${encodeURIComponent(config2.workspace)}&view=sessions&session=${encodeURIComponent(sessionName)}`;
 }
 
 // src/mcp/server.ts
@@ -29560,7 +29567,7 @@ function handleGetConfig(cwd) {
   const sessionName = cfg ? getSessionName(cwd) : null;
   const endpointInfo = cfg ? getEndpointInfo(cfg) : null;
   const endpointLabel = endpointInfo ? endpointInfo.type === "production" ? "platform" : endpointInfo.type : null;
-  const sessionUrl = cfg && sessionName ? honchoSessionUrl(cfg.workspace, sessionName) : null;
+  const sessionUrl = cfg && sessionName ? honchoSessionUrl(cfg, sessionName) : null;
   const current = cfg ? {
     workspace: cfg.workspace,
     session: sessionName,
@@ -30035,7 +30042,7 @@ function handleSetConfig(args) {
   const restartWarning = SESSION_AFFECTING_FIELDS.has(field) ? "Close and restart all active Claude Code sessions. Open sessions still use the previous config and will write to the wrong Honcho session." : undefined;
   const cwd = getLastActiveCwd() || process.cwd();
   const newSessionName = SESSION_AFFECTING_FIELDS.has(field) ? getSessionName(cwd) : undefined;
-  const sessionUrl = newSessionName ? honchoSessionUrl(cfg.workspace, newSessionName) : undefined;
+  const sessionUrl = newSessionName ? honchoSessionUrl(cfg, newSessionName) ?? undefined : undefined;
   return {
     content: [{
       type: "text",
@@ -30078,12 +30085,29 @@ var REMEMBER_TOOL = {
     required: ["queries", "reasoning_level"]
   }
 };
+var NOT_CONFIGURED_RESULT = {
+  content: [{ type: "text", text: "Honcho isn't configured; run /honcho:setup to connect it, then try again." }],
+  isError: true
+};
+function createClients() {
+  const config2 = loadConfig2();
+  if (!config2)
+    return null;
+  return {
+    config: config2,
+    honcho: new import_sdk.Honcho(getHonchoClientOptions(config2)),
+    honchoDialectic: new import_sdk.Honcho({
+      ...getHonchoClientOptions(config2),
+      timeout: DIALECTIC_TIMEOUT_MS,
+      maxRetries: 0
+    })
+  };
+}
 async function runMcpServer() {
   setDetectedHost("claude_code");
-  const config2 = loadConfig2();
-  if (!config2) {
-    console.error("[honcho-mcp] Not configured. Run: honcho init");
-    process.exit(1);
+  let clients = createClients();
+  if (!clients) {
+    console.error("[honcho-mcp] Not configured. Run /honcho:setup");
   }
   const server = new Server({
     name: "honcho",
@@ -30093,13 +30117,7 @@ async function runMcpServer() {
       tools: {}
     }
   });
-  const honcho = new import_sdk.Honcho(getHonchoClientOptions(config2));
-  const honchoDialectic = new import_sdk.Honcho({
-    ...getHonchoClientOptions(config2),
-    timeout: DIALECTIC_TIMEOUT_MS,
-    maxRetries: 0
-  });
-  const rememberEnabled = config2.rememberTool === true;
+  const rememberEnabled = clients?.config.rememberTool === true;
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     return {
       tools: [
@@ -30314,6 +30332,11 @@ async function runMcpServer() {
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
     const cwd = getLastActiveCwd() || process.cwd();
+    clients ??= createClients();
+    if (!clients) {
+      return NOT_CONFIGURED_RESULT;
+    }
+    const { config: config2, honcho, honchoDialectic } = clients;
     if (name === "get_config") {
       return handleGetConfig(cwd);
     }
@@ -30592,5 +30615,5 @@ ${card.map((item) => `- ${item}`).join(`
 // mcp-server.ts
 await runMcpServer();
 
-//# debugId=97E6B587611CC3BD64756E2164756E21
+//# debugId=67855800AE01CDB964756E2164756E21
 

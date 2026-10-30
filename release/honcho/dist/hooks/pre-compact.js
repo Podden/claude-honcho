@@ -16098,7 +16098,7 @@ var import_sdk = __toESM(require_dist(), 1);
 import { homedir as homedir2 } from "os";
 import { join as join3, basename, dirname, resolve, sep } from "path";
 import { fileURLToPath } from "url";
-import { existsSync as existsSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync2, statSync, writeFileSync as writeFileSync2 } from "fs";
+import { chmodSync, existsSync as existsSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync2, statSync, writeFileSync as writeFileSync2 } from "fs";
 
 // src/git.ts
 import { execSync } from "child_process";
@@ -16671,6 +16671,11 @@ function mergeWithEnvVars(config) {
   }
   return config;
 }
+function writeConfigFile(data) {
+  if (existsSync3(CONFIG_FILE))
+    chmodSync(CONFIG_FILE, 384);
+  writeFileSync2(CONFIG_FILE, JSON.stringify(data, null, 2), { mode: 384 });
+}
 function saveConfig(config) {
   if (!existsSync3(CONFIG_DIR)) {
     mkdirSync2(CONFIG_DIR, { recursive: true });
@@ -16701,9 +16706,9 @@ function saveConfig(config) {
   setHostIfExplicit("aiPeer", config.aiPeer, existing.aiPeer ?? DEFAULT_AI_PEER[host]);
   const enabledForSave = process.env.HONCHO_ENABLED === "false" && config.enabled === false ? existingHost.enabled : config.enabled;
   const loggingForSave = process.env.HONCHO_LOGGING === "false" && config.logging === false ? existingHost.logging : config.logging;
+  const saveMessagesForSave = process.env.HONCHO_SAVE_MESSAGES === "false" && config.saveMessages === false ? existingHost.saveMessages : config.saveMessages;
   setHostIfExplicit("enabled", enabledForSave, existing.enabled);
   setHostIfExplicit("logging", loggingForSave, existing.logging);
-  const saveMessagesForSave = process.env.HONCHO_SAVE_MESSAGES === "false" && config.saveMessages === false ? existingHost.saveMessages : config.saveMessages;
   setHostIfExplicit("saveMessages", saveMessagesForSave, existing.saveMessages);
   setHostIfExplicit("sessionStrategy", config.sessionStrategy, existing.sessionStrategy);
   setHostIfExplicit("sessionPeerPrefix", config.sessionPeerPrefix, existing.sessionPeerPrefix);
@@ -16719,7 +16724,7 @@ function saveConfig(config) {
     hostEntry.apiKey = existingHost.apiKey;
   }
   existing.hosts[host] = hostEntry;
-  writeFileSync2(CONFIG_FILE, JSON.stringify(existing, null, 2));
+  writeConfigFile(existing);
 }
 function saveRootField(field, value) {
   if (!existsSync3(CONFIG_DIR)) {
@@ -16732,7 +16737,7 @@ function saveRootField(field, value) {
     } catch {}
   }
   existing[field] = value;
-  writeFileSync2(CONFIG_FILE, JSON.stringify(existing, null, 2));
+  writeConfigFile(existing);
 }
 function resolveWorktreeMainRoot(dir) {
   try {
@@ -16896,6 +16901,9 @@ function getHonchoClientOptions(config) {
     maxRetries: 1,
     defaultHeaders: getTelemetryHeaders()
   };
+}
+function isProductionEndpoint(config) {
+  return getHonchoBaseUrl(config) === HONCHO_BASE_URLS.production;
 }
 function getEndpointInfo(config) {
   if (config.endpoint?.baseUrl) {
@@ -17420,15 +17428,24 @@ function visSessionContextMessage(hookName, lines, tokenCount, showContents = fa
   return body ? `${head}
 ${body}` : head;
 }
-function visComposedInjection(hookName, labels) {
-  const summary = labels.length ? `injected ${labels.join(" + ")}` : "nothing to inject";
-  return formatLine("in", hookName, summary);
+function visComposedInjection(hookName, labels, notes = []) {
+  const head = labels.length ? `injected ${labels.join(" + ")}` : "nothing injected";
+  return formatLine("in", hookName, [head, ...notes].join(" · "));
+}
+function visEmptyComponent(hookName, message, unavailable = false) {
+  return formatLine(unavailable ? "warn" : "info", hookName, message);
+}
+function visAnchorSummary(hookName, items, elapsedMs) {
+  const what = items.length ? items.join(" · ") : "session identity only";
+  return formatLine("in", hookName, `anchored ${what} (${(elapsedMs / 1000).toFixed(1)}s)`);
 }
 function visCapture(summary) {
   visMessage("out", "post-tool-use", `captured: ${summary}`);
 }
-function visSkipMessage(hookName, reason) {
-  visMessage("info", hookName, `skipped (${reason})`);
+function visSkipMessage(hookName, reason, banner) {
+  const line = formatLine("info", hookName, `skipped (${reason})`);
+  console.log(JSON.stringify({ systemMessage: banner ? `${banner}
+${line}` : line }));
 }
 function visStopMessage(direction, message) {
   visMessage(direction, "response", message);
@@ -17476,29 +17493,23 @@ function clearVerboseLog() {
   ensureVerboseLog();
   writeFileSync5(VERBOSE_LOG, "");
 }
-function formatVerboseBlock(label, data) {
-  if (!data)
-    return "";
-  const separator = "─".repeat(60);
-  const content = data.length > 3000 ? data.slice(0, 3000) + `
-... (${data.length - 3000} more chars)` : data;
-  return `
-[verbose] ${label}
-${separator}
-${content}
-${separator}`;
-}
-function formatVerboseList(label, items) {
-  if (!items || items.length === 0)
-    return "";
-  const formatted = items.map((item) => `  • ${item}`).join(`
-`);
-  return `
-[verbose] ${label} (${items.length} items)
-${formatted}`;
-}
 
 // src/hooks/pre-compact.ts
+var FACTS_ONLY = "Answer with facts only, as a terse bullet list written in the third person. " + "No preamble, no closing summary, no offers to help further, and no questions.";
+var CHAT_OFFER = /^(let me know|would you like|want me to|i can also)\b/i;
+var CONDITIONAL_OFFER = /^(if you('d| would)? like|if you want)\b.*\b(i can|i could|i'll|i will|let me know|just ask|happy to)\b/is;
+function isChatFiller(paragraph) {
+  return CHAT_OFFER.test(paragraph) || CONDITIONAL_OFFER.test(paragraph);
+}
+function stripChatFiller(answer) {
+  const paragraphs = answer.trim().split(/\n\s*\n/);
+  while (paragraphs.length > 1 && isChatFiller(paragraphs[paragraphs.length - 1].trim())) {
+    paragraphs.pop();
+  }
+  return paragraphs.join(`
+
+`);
+}
 function formatMemoryCard(config, sessionName, userContext, claudeContext, summaries, userDialectic, claudeDialectic) {
   const parts = [];
   parts.push(`## HONCHO MEMORY ANCHOR (Pre-Compaction Injection)
@@ -17586,6 +17597,7 @@ async function handlePreCompact() {
     logApiCall(contextLabel, "GET", observationMode === "unified" ? "self" : `target=${config.peerName}`);
     logApiCall("session.summaries", "GET", sessionName);
     logApiCall("peer.chat", "POST", "dialectic queries x2");
+    const fetchStart = Date.now();
     const dialecticArgs = observationMode === "unified" ? { session, reasoningLevel: config.reasoningLevel ?? "low" } : { target: config.peerName, session, reasoningLevel: config.reasoningLevel ?? "low" };
     const [userContextResult, summariesResult, userChatResult, claudeChatResult] = await Promise.allSettled([
       contextPeer.context({
@@ -17594,33 +17606,41 @@ async function handlePreCompact() {
         includeMostFrequent: true
       }),
       session.summaries(),
-      contextPeer.chat(`Summarize the most important things to remember about ${config.peerName}. Focus on their preferences, working style, current projects, and any critical context that should survive a conversation summary.`, dialecticArgs),
-      contextPeer.chat(`What are the most important things that were worked on with ${config.peerName}? Summarize key context that should be preserved.`, dialecticArgs)
+      contextPeer.chat(`What are the most important things to remember about ${config.peerName}? Cover their preferences, working style, current projects, and any critical context that should survive a conversation summary. ${FACTS_ONLY}`, dialecticArgs),
+      contextPeer.chat(`What are the most important things that were worked on with ${config.peerName}? ${FACTS_ONLY}`, dialecticArgs)
     ]);
+    const fetchMs = Date.now() - fetchStart;
     const userContext = userContextResult.status === "fulfilled" ? userContextResult.value : null;
     const summaries = summariesResult.status === "fulfilled" ? summariesResult.value : null;
-    const verboseBlocks = [];
-    verboseBlocks.push(formatVerboseBlock(`pre-compact ${contextLabel}`, userContext?.representation));
-    verboseBlocks.push(formatVerboseList("pre-compact peerCard", userContext?.peerCard));
-    const userDialectic = userChatResult.status === "fulfilled" ? userChatResult.value : null;
-    const claudeDialectic = claudeChatResult.status === "fulfilled" ? claudeChatResult.value : null;
+    verboseApiResult(`pre-compact ${contextLabel} → representation`, userContext?.representation);
+    verboseList("pre-compact peerCard", userContext?.peerCard);
+    const dialecticAnswer = (r) => r.status === "fulfilled" && typeof r.value === "string" && r.value.trim() ? stripChatFiller(r.value) : null;
+    const userDialectic = dialecticAnswer(userChatResult);
+    const claudeDialectic = dialecticAnswer(claudeChatResult);
     const memoryCard = formatMemoryCard(config, sessionName, userContext, null, summaries, userDialectic, claudeDialectic);
     if (trigger === "auto") {
       spinner.stop("memory anchored");
     }
     setMemoryState("idle", undefined, hookInput.session_id);
-    if (userDialectic) {
-      verboseBlocks.push(formatVerboseBlock(`pre-compact peer.chat(user) → "${config.peerName}"`, userDialectic));
-    }
-    if (claudeDialectic) {
-      verboseBlocks.push(formatVerboseBlock(`pre-compact peer.chat(claude) → "${config.aiPeer}"`, claudeDialectic));
-    }
+    verboseApiResult(`pre-compact peer.chat(user) → "${config.peerName}"`, userDialectic);
+    verboseApiResult(`pre-compact peer.chat(claude) → "${config.aiPeer}"`, claudeDialectic);
     logHook("pre-compact", `Memory anchored (${memoryCard.length} chars)`);
-    const verboseOutput = verboseBlocks.filter(Boolean).join(`
-`);
+    const ctx = userContext;
+    const anchored = [];
+    if (ctx?.peerCard?.length)
+      anchored.push(`peer card (${ctx.peerCard.length} items)`);
+    if (typeof ctx?.representation === "string" && ctx.representation.trim())
+      anchored.push("conclusions");
+    if (summaries?.shortSummary?.content)
+      anchored.push("session summary");
+    const answers = [userDialectic, claudeDialectic].filter(Boolean).length;
+    if (answers)
+      anchored.push(`${answers} dialectic answer${answers === 1 ? "" : "s"}`);
     console.log(`[${config.aiPeer}/Honcho Memory Anchor]
 
-${memoryCard}${verboseOutput}`);
+${memoryCard}
+
+${visAnchorSummary("pre-compact", anchored, fetchMs)}`);
     process.exit(0);
   } catch (error) {
     logHook("pre-compact", `Error: ${error}`, { error: String(error) });
@@ -17640,5 +17660,5 @@ async function main() {
 // hooks/pre-compact.ts
 await main();
 
-//# debugId=55F875F3419CB2DD64756E2164756E21
+//# debugId=2B34EC1AB2FF0D5264756E2164756E21
 

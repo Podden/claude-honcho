@@ -16098,7 +16098,7 @@ var import_sdk = __toESM(require_dist(), 1);
 import { homedir as homedir2 } from "os";
 import { join as join3, basename, dirname, resolve, sep } from "path";
 import { fileURLToPath } from "url";
-import { existsSync as existsSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync2, statSync, writeFileSync as writeFileSync2 } from "fs";
+import { chmodSync, existsSync as existsSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync2, statSync, writeFileSync as writeFileSync2 } from "fs";
 
 // src/git.ts
 import { execSync } from "child_process";
@@ -16671,6 +16671,11 @@ function mergeWithEnvVars(config) {
   }
   return config;
 }
+function writeConfigFile(data) {
+  if (existsSync3(CONFIG_FILE))
+    chmodSync(CONFIG_FILE, 384);
+  writeFileSync2(CONFIG_FILE, JSON.stringify(data, null, 2), { mode: 384 });
+}
 function saveConfig(config) {
   if (!existsSync3(CONFIG_DIR)) {
     mkdirSync2(CONFIG_DIR, { recursive: true });
@@ -16701,9 +16706,9 @@ function saveConfig(config) {
   setHostIfExplicit("aiPeer", config.aiPeer, existing.aiPeer ?? DEFAULT_AI_PEER[host]);
   const enabledForSave = process.env.HONCHO_ENABLED === "false" && config.enabled === false ? existingHost.enabled : config.enabled;
   const loggingForSave = process.env.HONCHO_LOGGING === "false" && config.logging === false ? existingHost.logging : config.logging;
+  const saveMessagesForSave = process.env.HONCHO_SAVE_MESSAGES === "false" && config.saveMessages === false ? existingHost.saveMessages : config.saveMessages;
   setHostIfExplicit("enabled", enabledForSave, existing.enabled);
   setHostIfExplicit("logging", loggingForSave, existing.logging);
-  const saveMessagesForSave = process.env.HONCHO_SAVE_MESSAGES === "false" && config.saveMessages === false ? existingHost.saveMessages : config.saveMessages;
   setHostIfExplicit("saveMessages", saveMessagesForSave, existing.saveMessages);
   setHostIfExplicit("sessionStrategy", config.sessionStrategy, existing.sessionStrategy);
   setHostIfExplicit("sessionPeerPrefix", config.sessionPeerPrefix, existing.sessionPeerPrefix);
@@ -16719,7 +16724,7 @@ function saveConfig(config) {
     hostEntry.apiKey = existingHost.apiKey;
   }
   existing.hosts[host] = hostEntry;
-  writeFileSync2(CONFIG_FILE, JSON.stringify(existing, null, 2));
+  writeConfigFile(existing);
 }
 function saveRootField(field, value) {
   if (!existsSync3(CONFIG_DIR)) {
@@ -16732,7 +16737,7 @@ function saveRootField(field, value) {
     } catch {}
   }
   existing[field] = value;
-  writeFileSync2(CONFIG_FILE, JSON.stringify(existing, null, 2));
+  writeConfigFile(existing);
 }
 function resolveWorktreeMainRoot(dir) {
   try {
@@ -16897,6 +16902,9 @@ function getHonchoClientOptions(config) {
     defaultHeaders: getTelemetryHeaders()
   };
 }
+function isProductionEndpoint(config) {
+  return getHonchoBaseUrl(config) === HONCHO_BASE_URLS.production;
+}
 function getEndpointInfo(config) {
   if (config.endpoint?.baseUrl) {
     return { type: "custom", url: config.endpoint.baseUrl };
@@ -16912,7 +16920,7 @@ function getObservationMode(config) {
 }
 
 // src/hooks/stop.ts
-import { existsSync as existsSync6, readFileSync as readFileSync4 } from "fs";
+import { existsSync as existsSync7, readFileSync as readFileSync4 } from "fs";
 
 // src/log.ts
 import { homedir as homedir3 } from "os";
@@ -17143,15 +17151,24 @@ function visSessionContextMessage(hookName, lines, tokenCount, showContents = fa
   return body ? `${head}
 ${body}` : head;
 }
-function visComposedInjection(hookName, labels) {
-  const summary = labels.length ? `injected ${labels.join(" + ")}` : "nothing to inject";
-  return formatLine("in", hookName, summary);
+function visComposedInjection(hookName, labels, notes = []) {
+  const head = labels.length ? `injected ${labels.join(" + ")}` : "nothing injected";
+  return formatLine("in", hookName, [head, ...notes].join(" · "));
+}
+function visEmptyComponent(hookName, message, unavailable = false) {
+  return formatLine(unavailable ? "warn" : "info", hookName, message);
+}
+function visAnchorSummary(hookName, items, elapsedMs) {
+  const what = items.length ? items.join(" · ") : "session identity only";
+  return formatLine("in", hookName, `anchored ${what} (${(elapsedMs / 1000).toFixed(1)}s)`);
 }
 function visCapture(summary) {
   visMessage("out", "post-tool-use", `captured: ${summary}`);
 }
-function visSkipMessage(hookName, reason) {
-  visMessage("info", hookName, `skipped (${reason})`);
+function visSkipMessage(hookName, reason, banner) {
+  const line = formatLine("info", hookName, `skipped (${reason})`);
+  console.log(JSON.stringify({ systemMessage: banner ? `${banner}
+${line}` : line }));
 }
 function visStopMessage(direction, message) {
   visMessage(direction, "response", message);
@@ -17199,66 +17216,67 @@ function clearVerboseLog() {
   ensureVerboseLog();
   writeFileSync4(VERBOSE_LOG, "");
 }
-function formatVerboseBlock(label, data) {
-  if (!data)
-    return "";
-  const separator = "─".repeat(60);
-  const content = data.length > 3000 ? data.slice(0, 3000) + `
-... (${data.length - 3000} more chars)` : data;
-  return `
-[verbose] ${label}
-${separator}
-${content}
-${separator}`;
-}
-function formatVerboseList(label, items) {
-  if (!items || items.length === 0)
-    return "";
-  const formatted = items.map((item) => `  • ${item}`).join(`
-`);
-  return `
-[verbose] ${label} (${items.length} items)
-${formatted}`;
-}
 
 // src/prompt-filters.ts
+import { existsSync as existsSync6 } from "fs";
 var TRIVIAL_REPLY_PATTERN = /^(yes|no|ok|sure|thanks|y|n|yep|nope|yeah|nah|continue|go ahead|do it|proceed)$/i;
 function isTerseReply(prompt) {
   return TRIVIAL_REPLY_PATTERN.test(prompt.trim());
 }
 var HARNESS_INJECTED_PATTERNS = [
-  /^<task-notification>/,
+  /^<task-notification(?=[\s/>])/,
+  /^<cross-session-message(?=[\s/>])/,
+  /^<agent-message(?=[\s/>])/,
+  /^<channel(?=[\s/>])/,
+  /^<local-command-caveat(?=[\s/>])/,
   /^<local-command-stdout>/,
   /^<command-name>/,
   /^<command-message>/,
-  /^<system-reminder>/,
+  /^<system-reminder(?=[\s/>])/,
   /^<bash-(stdout|stderr|input)>/,
-  /^<cross-session-message[\s>]/,
-  /^<channel[\s>]/,
-  /^<agent-message[\s>]/,
   /^<<[\w-]+>>$/
 ];
-var LEADING_REMINDERS = /^(?:\s*<system-reminder>[\s\S]*?<\/system-reminder>)+\s*/;
+var LEADING_REMINDERS = /^(?:\s*<system-reminder(?=[\s>])[^>]*>[\s\S]*?<\/system-reminder>)+\s*/;
 function stripLeadingReminders(prompt) {
   return prompt.replace(LEADING_REMINDERS, "");
 }
 var MESSAGE_PREAMBLE = /^Another Claude session sent a message:\s*/;
+var SLASH_COMMAND_ENVELOPE = /^<command-(name|message)>/;
 function isHarnessInjected(prompt) {
   const trimmed = stripLeadingReminders(prompt).trim().replace(MESSAGE_PREAMBLE, "");
   return !trimmed || HARNESS_INJECTED_PATTERNS.some((p) => p.test(trimmed));
+}
+var SLASH_COMMAND = /^\/([\w:-]+)(?:\s|$)/;
+function isSlashCommand(prompt) {
+  const trimmed = stripLeadingReminders(prompt).trim();
+  if (SLASH_COMMAND_ENVELOPE.test(trimmed))
+    return true;
+  const name = SLASH_COMMAND.exec(trimmed)?.[1];
+  if (!name)
+    return false;
+  return name.includes(":") || !existsSync6(`/${name}`);
 }
 
 // src/hooks/stop.ts
 function isWakeupBoundary(entry) {
   return entry.promptSource === "system" || entry.origin?.kind === "task-notification";
 }
+function userText(entry) {
+  const mc = entry.message?.content ?? entry.content;
+  if (typeof mc === "string")
+    return mc;
+  if (Array.isArray(mc))
+    return mc.filter((b) => b.type === "text" && b.text).map((b) => b.text).join("");
+  return "";
+}
 function isRealUserPrompt(entry) {
   if (entry.isMeta)
     return false;
-  const mc = entry.message?.content ?? entry.content;
-  const text = typeof mc === "string" ? mc : Array.isArray(mc) ? mc.filter((b) => b.type === "text" && b.text).map((b) => b.text).join("") : "";
-  const trimmed = stripLeadingReminders(text).trim();
-  return trimmed.length > 0 && !trimmed.startsWith("<");
+  const text = userText(entry);
+  return !isHarnessInjected(text) && !isSlashCommand(text);
+}
+function isSlashCommandBoundary(entry) {
+  return !entry.isMeta && isSlashCommand(userText(entry));
 }
 function assistantText(entry) {
   const mc = entry.message?.content ?? entry.content;
@@ -17279,7 +17297,7 @@ function getCurrentTurnAssistantMessages(transcriptPath, lastAssistantMessage) {
   return blocks2;
 }
 function readTranscriptTurnBlocks(transcriptPath) {
-  if (!transcriptPath || !existsSync6(transcriptPath))
+  if (!transcriptPath || !existsSync7(transcriptPath))
     return [];
   let lines;
   try {
@@ -17292,7 +17310,7 @@ function readTranscriptTurnBlocks(transcriptPath) {
   for (let i = lines.length - 1;i >= 0; i--) {
     try {
       const entry = JSON.parse(lines[i]);
-      if ((entry.type || entry.role) === "user" && (isRealUserPrompt(entry) || isWakeupBoundary(entry))) {
+      if ((entry.type || entry.role) === "user" && (isRealUserPrompt(entry) || isSlashCommandBoundary(entry) || isWakeupBoundary(entry))) {
         lastPromptIdx = i;
         break;
       }
@@ -17372,9 +17390,10 @@ async function handleStop() {
       return honcho.session(sessionName);
     });
     logHook("stop", `Saved ${turnMessages.length} assistant message(s)`);
-    visStopMessage("out", `saved ${turnMessages.length} assistant msg(s)`);
   } catch (error) {
     logHook("stop", `Upload failed: ${error}`, { error: String(error) });
+    const seeLog = isLoggingEnabled() ? " (see ~/.honcho/activity.log)" : "";
+    visStopMessage("warn", `upload failed, ${turnMessages.length} assistant msg(s) not saved${seeLog}`);
   }
   process.exit(0);
 }
@@ -17386,5 +17405,5 @@ async function main() {
 // hooks/stop.ts
 await main();
 
-//# debugId=FD9C7327C680B3A164756E2164756E21
+//# debugId=87687F070E84DBC864756E2164756E21
 

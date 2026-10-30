@@ -16085,7 +16085,7 @@ var import_sdk = __toESM(require_dist(), 1);
 import { homedir as homedir2 } from "os";
 import { join as join3, basename, dirname, resolve, sep } from "path";
 import { fileURLToPath } from "url";
-import { existsSync as existsSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync2, statSync, writeFileSync as writeFileSync2 } from "fs";
+import { chmodSync, existsSync as existsSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync2, statSync, writeFileSync as writeFileSync2 } from "fs";
 
 // src/git.ts
 import { execSync } from "child_process";
@@ -16434,6 +16434,11 @@ function mergeWithEnvVars(config) {
   }
   return config;
 }
+function writeConfigFile(data) {
+  if (existsSync3(CONFIG_FILE))
+    chmodSync(CONFIG_FILE, 384);
+  writeFileSync2(CONFIG_FILE, JSON.stringify(data, null, 2), { mode: 384 });
+}
 function saveConfig(config) {
   if (!existsSync3(CONFIG_DIR)) {
     mkdirSync2(CONFIG_DIR, { recursive: true });
@@ -16464,9 +16469,9 @@ function saveConfig(config) {
   setHostIfExplicit("aiPeer", config.aiPeer, existing.aiPeer ?? DEFAULT_AI_PEER[host]);
   const enabledForSave = process.env.HONCHO_ENABLED === "false" && config.enabled === false ? existingHost.enabled : config.enabled;
   const loggingForSave = process.env.HONCHO_LOGGING === "false" && config.logging === false ? existingHost.logging : config.logging;
+  const saveMessagesForSave = process.env.HONCHO_SAVE_MESSAGES === "false" && config.saveMessages === false ? existingHost.saveMessages : config.saveMessages;
   setHostIfExplicit("enabled", enabledForSave, existing.enabled);
   setHostIfExplicit("logging", loggingForSave, existing.logging);
-  const saveMessagesForSave = process.env.HONCHO_SAVE_MESSAGES === "false" && config.saveMessages === false ? existingHost.saveMessages : config.saveMessages;
   setHostIfExplicit("saveMessages", saveMessagesForSave, existing.saveMessages);
   setHostIfExplicit("sessionStrategy", config.sessionStrategy, existing.sessionStrategy);
   setHostIfExplicit("sessionPeerPrefix", config.sessionPeerPrefix, existing.sessionPeerPrefix);
@@ -16482,7 +16487,7 @@ function saveConfig(config) {
     hostEntry.apiKey = existingHost.apiKey;
   }
   existing.hosts[host] = hostEntry;
-  writeFileSync2(CONFIG_FILE, JSON.stringify(existing, null, 2));
+  writeConfigFile(existing);
 }
 function saveRootField(field, value) {
   if (!existsSync3(CONFIG_DIR)) {
@@ -16495,7 +16500,7 @@ function saveRootField(field, value) {
     } catch {}
   }
   existing[field] = value;
-  writeFileSync2(CONFIG_FILE, JSON.stringify(existing, null, 2));
+  writeConfigFile(existing);
 }
 function getClaudeSettingsPath() {
   return join3(homedir2(), ".claude", "settings.json");
@@ -16645,14 +16650,44 @@ function getObservationMode(config) {
 }
 
 // src/skills/transcript-parse.ts
-import { existsSync as existsSync4, readFileSync as readFileSync3, readdirSync, statSync as statSync2 } from "fs";
+import { existsSync as existsSync5, readFileSync as readFileSync3, readdirSync, statSync as statSync2 } from "fs";
 import { homedir as homedir3 } from "os";
 import { join as join4 } from "path";
 
 // src/prompt-filters.ts
-var LEADING_REMINDERS = /^(?:\s*<system-reminder>[\s\S]*?<\/system-reminder>)+\s*/;
+import { existsSync as existsSync4 } from "fs";
+var HARNESS_INJECTED_PATTERNS = [
+  /^<task-notification(?=[\s/>])/,
+  /^<cross-session-message(?=[\s/>])/,
+  /^<agent-message(?=[\s/>])/,
+  /^<channel(?=[\s/>])/,
+  /^<local-command-caveat(?=[\s/>])/,
+  /^<local-command-stdout>/,
+  /^<command-name>/,
+  /^<command-message>/,
+  /^<system-reminder(?=[\s/>])/,
+  /^<bash-(stdout|stderr|input)>/,
+  /^<<[\w-]+>>$/
+];
+var LEADING_REMINDERS = /^(?:\s*<system-reminder(?=[\s>])[^>]*>[\s\S]*?<\/system-reminder>)+\s*/;
 function stripLeadingReminders(prompt) {
   return prompt.replace(LEADING_REMINDERS, "");
+}
+var MESSAGE_PREAMBLE = /^Another Claude session sent a message:\s*/;
+var SLASH_COMMAND_ENVELOPE = /^<command-(name|message)>/;
+function isHarnessInjected(prompt) {
+  const trimmed = stripLeadingReminders(prompt).trim().replace(MESSAGE_PREAMBLE, "");
+  return !trimmed || HARNESS_INJECTED_PATTERNS.some((p) => p.test(trimmed));
+}
+var SLASH_COMMAND = /^\/([\w:-]+)(?:\s|$)/;
+function isSlashCommand(prompt) {
+  const trimmed = stripLeadingReminders(prompt).trim();
+  if (SLASH_COMMAND_ENVELOPE.test(trimmed))
+    return true;
+  const name = SLASH_COMMAND.exec(trimmed)?.[1];
+  if (!name)
+    return false;
+  return name.includes(":") || !existsSync4(`/${name}`);
 }
 
 // src/skills/transcript-parse.ts
@@ -16662,10 +16697,8 @@ function entryType(entry) {
 function isRealUserPrompt(entry) {
   if (entry.isMeta)
     return false;
-  const mc = entry.message?.content ?? entry.content;
-  const text = typeof mc === "string" ? mc : Array.isArray(mc) ? mc.filter((b) => b.type === "text" && b.text).map((b) => b.text).join("") : "";
-  const trimmed = stripLeadingReminders(text).trim();
-  return trimmed.length > 0 && !trimmed.startsWith("<");
+  const text = userText(entry);
+  return !isHarnessInjected(text) && !isSlashCommand(text);
 }
 function userText(entry) {
   const mc = entry.message?.content ?? entry.content;
@@ -16687,7 +16720,7 @@ function assistantText(entry) {
   return "";
 }
 function readLines(transcriptPath) {
-  if (!transcriptPath || !existsSync4(transcriptPath))
+  if (!transcriptPath || !existsSync5(transcriptPath))
     return [];
   try {
     return readFileSync3(transcriptPath, "utf-8").split(`
@@ -16741,7 +16774,7 @@ function parseTranscriptForBackfill(transcriptPath) {
 }
 var PROJECTS_DIR = join4(homedir3(), ".claude", "projects");
 function findTranscripts(days) {
-  if (!existsSync4(PROJECTS_DIR))
+  if (!existsSync5(PROJECTS_DIR))
     return [];
   const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
   const out = [];
@@ -16831,7 +16864,7 @@ function listItem(text, indent = 0) {
 
 // src/skills/backfill.ts
 import { join as join5, basename as basename2 } from "path";
-import { existsSync as existsSync5, readFileSync as readFileSync4, writeFileSync as writeFileSync3, mkdirSync as mkdirSync3 } from "fs";
+import { existsSync as existsSync6, readFileSync as readFileSync4, writeFileSync as writeFileSync3, mkdirSync as mkdirSync3 } from "fs";
 function parseArgs(argv) {
   const args = { days: 30, dryRun: false };
   for (let i = 0;i < argv.length; i++) {
@@ -16858,7 +16891,7 @@ function loadState() {
   }
 }
 function saveState(state) {
-  if (!existsSync5(getConfigDir()))
+  if (!existsSync6(getConfigDir()))
     mkdirSync3(getConfigDir(), { recursive: true });
   writeFileSync3(STATE_FILE, JSON.stringify(state, null, 2));
 }
@@ -17011,5 +17044,5 @@ async function main() {
 // src/skills/backfill-runner.ts
 await main();
 
-//# debugId=B1C0C11B72B380A564756E2164756E21
+//# debugId=BBD1622E6C9EAA4764756E2164756E21
 

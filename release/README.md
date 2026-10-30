@@ -19,13 +19,20 @@ Rebuild after changing `plugins/honcho/src`:
 ```bash
 cd plugins/honcho
 bun install --frozen-lockfile && bun test
-RELEASE_VERSION=0.3.3-podden.N bun scripts/build.ts
+RELEASE_VERSION=0.3.4-podden.N bun scripts/build.ts
 cd ../.. && git rm -rq release/honcho && mkdir -p release/honcho
 cp -r plugins/honcho/.stage/. release/honcho/
 find release/honcho -name "*.map" -delete
 sed -i 's|^//# sourceMappingURL=.*$||' $(find release/honcho -name "*.js")
-sed -i 's|"node \${CLAUDE_PLUGIN_ROOT}/dist/hooks/|"bun ${CLAUDE_PLUGIN_ROOT}/dist/hooks/|g' release/honcho/hooks/hooks.json
+sed -i 's|"command": "node |"command": "bun |g' release/honcho/hooks/hooks.json
+bash plugins/honcho/scripts/smoke.sh "$PWD/release/honcho"
 ```
+
+On Windows, `smoke.sh` and the prompt-hook tests set only `HOME`, but
+`os.homedir()` reads `USERPROFILE` there. They then run against the real
+`~/.honcho/config.json`, and the prompt-hook tests upload fixture prompts to
+the live workspace (session `project`). Export `USERPROFILE` to the sandbox
+home as well, or run the tests on Linux/macOS.
 
 The hooks run under bun, not node: on Windows, Node 24.19 aborts the bundled
 `user-prompt` hook at exit (`Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)`,

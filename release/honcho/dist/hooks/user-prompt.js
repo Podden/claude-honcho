@@ -16093,14 +16093,14 @@ var require_dist = __commonJS((exports) => {
 
 // src/hooks/user-prompt.ts
 var import_sdk = __toESM(require_dist(), 1);
-import { readFileSync as readFileSync5, existsSync as existsSync6 } from "node:fs";
+import { readFileSync as readFileSync5, existsSync as existsSync7 } from "node:fs";
 import { join as join8 } from "node:path";
 
 // src/config.ts
 import { homedir as homedir2 } from "os";
 import { join as join3, basename, dirname, resolve, sep } from "path";
 import { fileURLToPath } from "url";
-import { existsSync as existsSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync2, statSync, writeFileSync as writeFileSync2 } from "fs";
+import { chmodSync, existsSync as existsSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync2, statSync, writeFileSync as writeFileSync2 } from "fs";
 
 // src/git.ts
 import { execSync } from "child_process";
@@ -16673,6 +16673,11 @@ function mergeWithEnvVars(config) {
   }
   return config;
 }
+function writeConfigFile(data) {
+  if (existsSync3(CONFIG_FILE))
+    chmodSync(CONFIG_FILE, 384);
+  writeFileSync2(CONFIG_FILE, JSON.stringify(data, null, 2), { mode: 384 });
+}
 function saveConfig(config) {
   if (!existsSync3(CONFIG_DIR)) {
     mkdirSync2(CONFIG_DIR, { recursive: true });
@@ -16703,9 +16708,9 @@ function saveConfig(config) {
   setHostIfExplicit("aiPeer", config.aiPeer, existing.aiPeer ?? DEFAULT_AI_PEER[host]);
   const enabledForSave = process.env.HONCHO_ENABLED === "false" && config.enabled === false ? existingHost.enabled : config.enabled;
   const loggingForSave = process.env.HONCHO_LOGGING === "false" && config.logging === false ? existingHost.logging : config.logging;
+  const saveMessagesForSave = process.env.HONCHO_SAVE_MESSAGES === "false" && config.saveMessages === false ? existingHost.saveMessages : config.saveMessages;
   setHostIfExplicit("enabled", enabledForSave, existing.enabled);
   setHostIfExplicit("logging", loggingForSave, existing.logging);
-  const saveMessagesForSave = process.env.HONCHO_SAVE_MESSAGES === "false" && config.saveMessages === false ? existingHost.saveMessages : config.saveMessages;
   setHostIfExplicit("saveMessages", saveMessagesForSave, existing.saveMessages);
   setHostIfExplicit("sessionStrategy", config.sessionStrategy, existing.sessionStrategy);
   setHostIfExplicit("sessionPeerPrefix", config.sessionPeerPrefix, existing.sessionPeerPrefix);
@@ -16721,7 +16726,7 @@ function saveConfig(config) {
     hostEntry.apiKey = existingHost.apiKey;
   }
   existing.hosts[host] = hostEntry;
-  writeFileSync2(CONFIG_FILE, JSON.stringify(existing, null, 2));
+  writeConfigFile(existing);
 }
 function saveRootField(field, value) {
   if (!existsSync3(CONFIG_DIR)) {
@@ -16734,7 +16739,7 @@ function saveRootField(field, value) {
     } catch {}
   }
   existing[field] = value;
-  writeFileSync2(CONFIG_FILE, JSON.stringify(existing, null, 2));
+  writeConfigFile(existing);
 }
 function resolveWorktreeMainRoot(dir) {
   try {
@@ -16898,6 +16903,9 @@ function getHonchoClientOptions(config) {
     maxRetries: 1,
     defaultHeaders: getTelemetryHeaders()
   };
+}
+function isProductionEndpoint(config) {
+  return getHonchoBaseUrl(config) === HONCHO_BASE_URLS.production;
 }
 function getEndpointInfo(config) {
   if (config.endpoint?.baseUrl) {
@@ -17142,15 +17150,24 @@ function visSessionContextMessage(hookName, lines, tokenCount, showContents = fa
   return body ? `${head}
 ${body}` : head;
 }
-function visComposedInjection(hookName, labels) {
-  const summary = labels.length ? `injected ${labels.join(" + ")}` : "nothing to inject";
-  return formatLine("in", hookName, summary);
+function visComposedInjection(hookName, labels, notes = []) {
+  const head = labels.length ? `injected ${labels.join(" + ")}` : "nothing injected";
+  return formatLine("in", hookName, [head, ...notes].join(" · "));
+}
+function visEmptyComponent(hookName, message, unavailable = false) {
+  return formatLine(unavailable ? "warn" : "info", hookName, message);
+}
+function visAnchorSummary(hookName, items, elapsedMs) {
+  const what = items.length ? items.join(" · ") : "session identity only";
+  return formatLine("in", hookName, `anchored ${what} (${(elapsedMs / 1000).toFixed(1)}s)`);
 }
 function visCapture(summary) {
   visMessage("out", "post-tool-use", `captured: ${summary}`);
 }
-function visSkipMessage(hookName, reason) {
-  visMessage("info", hookName, `skipped (${reason})`);
+function visSkipMessage(hookName, reason, banner) {
+  const line = formatLine("info", hookName, `skipped (${reason})`);
+  console.log(JSON.stringify({ systemMessage: banner ? `${banner}
+${line}` : line }));
 }
 function visStopMessage(direction, message) {
   visMessage(direction, "response", message);
@@ -17197,27 +17214,6 @@ function clearVerboseLog() {
     return;
   ensureVerboseLog();
   writeFileSync4(VERBOSE_LOG, "");
-}
-function formatVerboseBlock(label, data) {
-  if (!data)
-    return "";
-  const separator = "─".repeat(60);
-  const content = data.length > 3000 ? data.slice(0, 3000) + `
-... (${data.length - 3000} more chars)` : data;
-  return `
-[verbose] ${label}
-${separator}
-${content}
-${separator}`;
-}
-function formatVerboseList(label, items) {
-  if (!items || items.length === 0)
-    return "";
-  const formatted = items.map((item) => `  • ${item}`).join(`
-`);
-  return `
-[verbose] ${label} (${items.length} items)
-${formatted}`;
 }
 
 // src/recall.ts
@@ -17327,11 +17323,10 @@ var symbols2 = {
   pipe: String.fromCodePoint(9474),
   sparkle: String.fromCodePoint(10022)
 };
-function honchoSessionUrl(workspace, sessionName) {
-  const cfg = loadConfig2();
-  if (cfg && !/^https?:\/\/([^/]+\.)?honcho\.dev(\/|$)/.test(getHonchoBaseUrl(cfg)))
+function honchoSessionUrl(config, sessionName) {
+  if (!isProductionEndpoint(config))
     return null;
-  return `https://app.honcho.dev/explore?workspace=${encodeURIComponent(workspace)}&view=sessions&session=${encodeURIComponent(sessionName)}`;
+  return `https://app.honcho.dev/explore?workspace=${encodeURIComponent(config.workspace)}&view=sessions&session=${encodeURIComponent(sessionName)}`;
 }
 
 // src/state.ts
@@ -17366,37 +17361,46 @@ function clearSessionFiles(sessionId) {
 }
 
 // src/prompt-filters.ts
+import { existsSync as existsSync6 } from "fs";
 var TRIVIAL_REPLY_PATTERN = /^(yes|no|ok|sure|thanks|y|n|yep|nope|yeah|nah|continue|go ahead|do it|proceed)$/i;
 function isTerseReply(prompt) {
   return TRIVIAL_REPLY_PATTERN.test(prompt.trim());
 }
 var HARNESS_INJECTED_PATTERNS = [
-  /^<task-notification>/,
+  /^<task-notification(?=[\s/>])/,
+  /^<cross-session-message(?=[\s/>])/,
+  /^<agent-message(?=[\s/>])/,
+  /^<channel(?=[\s/>])/,
+  /^<local-command-caveat(?=[\s/>])/,
   /^<local-command-stdout>/,
   /^<command-name>/,
   /^<command-message>/,
-  /^<system-reminder>/,
+  /^<system-reminder(?=[\s/>])/,
   /^<bash-(stdout|stderr|input)>/,
-  /^<cross-session-message[\s>]/,
-  /^<channel[\s>]/,
-  /^<agent-message[\s>]/,
   /^<<[\w-]+>>$/
 ];
-var LEADING_REMINDERS = /^(?:\s*<system-reminder>[\s\S]*?<\/system-reminder>)+\s*/;
+var LEADING_REMINDERS = /^(?:\s*<system-reminder(?=[\s>])[^>]*>[\s\S]*?<\/system-reminder>)+\s*/;
 function stripLeadingReminders(prompt) {
   return prompt.replace(LEADING_REMINDERS, "");
 }
 var MESSAGE_PREAMBLE = /^Another Claude session sent a message:\s*/;
+var SLASH_COMMAND_ENVELOPE = /^<command-(name|message)>/;
 function isHarnessInjected(prompt) {
   const trimmed = stripLeadingReminders(prompt).trim().replace(MESSAGE_PREAMBLE, "");
   return !trimmed || HARNESS_INJECTED_PATTERNS.some((p) => p.test(trimmed));
 }
+var SLASH_COMMAND = /^\/([\w:-]+)(?:\s|$)/;
+function isSlashCommand(prompt) {
+  const trimmed = stripLeadingReminders(prompt).trim();
+  if (SLASH_COMMAND_ENVELOPE.test(trimmed))
+    return true;
+  const name = SLASH_COMMAND.exec(trimmed)?.[1];
+  if (!name)
+    return false;
+  return name.includes(":") || !existsSync6(`/${name}`);
+}
 
 // src/hooks/user-prompt.ts
-var SKIP_CONTEXT_PATTERNS = [
-  TRIVIAL_REPLY_PATTERN,
-  /^\//
-];
 var FETCH_TIMEOUT_MS = 4000;
 var DIALECTIC_TIMEOUT_MS = 120000;
 var RECALL_TIMEOUT_MS = 8000;
@@ -17425,8 +17429,14 @@ function extractTopics(prompt) {
   const words = prompt.toLowerCase().match(/\b[a-z]{4,}\b/g) || [];
   return { topics: [...new Set(words.filter((w) => !stopwords.has(w)))].slice(0, 10), precise: false };
 }
-function shouldSkipContextRetrieval(prompt) {
-  return SKIP_CONTEXT_PATTERNS.some((p) => p.test(prompt.trim()));
+function skipReason(prompt) {
+  if (isHarnessInjected(prompt))
+    return "automated message";
+  if (isSlashCommand(prompt))
+    return "slash command";
+  if (isTerseReply(stripLeadingReminders(prompt)))
+    return "short reply";
+  return null;
 }
 function formatSessionLink(sessionUrl) {
   return sessionUrl ? `view your session in honcho GUI: ${sessionUrl}` : undefined;
@@ -17436,7 +17446,7 @@ function readVersionNag() {
   if (!dataDir)
     return;
   const flag = join8(dataDir, ".version-stale");
-  if (!existsSync6(flag))
+  if (!existsSync7(flag))
     return;
   try {
     return readFileSync5(flag, "utf8").trim() || undefined;
@@ -17470,20 +17480,23 @@ async function handleUserPrompt() {
     process.exit(0);
   }
   logHook("user-prompt", `Prompt received (${prompt.length} chars)`);
-  setSessionLink(honchoSessionUrl(config.workspace, sessionName), sessionName, hookInput.session_id);
+  const sessionUrl = honchoSessionUrl(config, sessionName);
+  setSessionLink(sessionUrl, sessionName, hookInput.session_id);
   const messageCountBefore = getMessageCount();
   incrementMessageCount();
   if (messageCountBefore === 0) {
     sessionToolHint = `Honcho memory tools are available — call honcho.search(query) or honcho.get_context to recall ` + `facts about ${config.peerName} across sessions, and honcho.chat(question) for dialectic/` + `psychological questions. Prefer querying over guessing when the user's history is relevant.`;
   }
   const nag = readVersionNag();
-  const sessionLink = messageCountBefore === 0 ? nag ?? formatSessionLink(honchoSessionUrl(config.workspace, sessionName)) : messageCountBefore === 1 && nag ? formatSessionLink(honchoSessionUrl(config.workspace, sessionName)) : undefined;
-  const userPrompt = stripLeadingReminders(prompt);
-  if (isHarnessInjected(prompt) || shouldSkipContextRetrieval(userPrompt)) {
-    logHook("user-prompt", "Skipping context (harness-injected or trivial prompt)");
-    visSkipMessage("user-prompt", sessionLink ? `${sessionLink} · skipped` : "skipped");
+  const link = sessionUrl ? formatSessionLink(sessionUrl) : undefined;
+  const banner = messageCountBefore === 0 ? nag ?? link : messageCountBefore === 1 && nag ? link : undefined;
+  const skip = skipReason(prompt);
+  if (skip) {
+    logHook("user-prompt", `Skipping context (${skip})`);
+    visSkipMessage("user-prompt", skip, banner);
     process.exit(0);
   }
+  const userPrompt = stripLeadingReminders(prompt);
   const injection = getInjectionConfig(config);
   const wantUserContext = injection.perTurn.includes("userContext");
   const wantAssistantContext = injection.perTurn.includes("assistantContext");
@@ -17491,7 +17504,7 @@ async function handleUserPrompt() {
   const wantDialectic = injection.perTurn.includes("dialectic");
   if (!wantUserContext && !wantAssistantContext && !wantSessionContext && !wantDialectic) {
     logHook("user-prompt", "No per-turn injection components selected");
-    visSkipMessage("user-prompt", sessionLink ? `${sessionLink} · injection off` : "injection off");
+    visSkipMessage("user-prompt", "injection off", banner);
     process.exit(0);
   }
   setMemoryState("recalling", undefined, hookInput.session_id);
@@ -17502,49 +17515,69 @@ async function handleUserPrompt() {
     wantDialectic ? raceTimeout(fetchDialectic(config, userPrompt, injection, sessionName), DIALECTIC_TIMEOUT_MS) : Promise.resolve(null)
   ]);
   const userCtx = userCtxResult && (userCtxResult.context || userCtxResult.conclusions) ? { context: userCtxResult.context, matched: userCtxResult.matched, queryLabel: userCtxResult.queryLabel, conclusions: userCtxResult.conclusions } : null;
-  emitPerTurn(config, injection, userCtx, assistantCtxResult?.context ?? null, sessionCtx, dialectic, sessionLink);
+  emitPerTurn(config, injection, userCtx, assistantCtxResult?.context ?? null, sessionCtx, dialectic, banner);
   process.exit(0);
 }
-function emitPerTurn(config, injection, userCtx, assistantCtx, sessionCtx, dialectic, sessionLink) {
+function emitPerTurn(config, injection, userCtx, assistantCtx, sessionCtx, dialectic, banner) {
   const parts = [];
   const visLines = [];
   const show = (c) => injection.showContents?.includes(c) ?? false;
-  if (userCtx) {
-    const conclusions = userCtx.conclusions ?? extractConclusions(userCtx.context);
-    if (conclusions.length > 0) {
+  const want = (c) => injection.perTurn?.includes(c) ?? false;
+  const unavailable = (what) => visLines.push(visEmptyComponent("user-prompt", `${what} unavailable`, true));
+  const empty = (message) => visLines.push(visEmptyComponent("user-prompt", message));
+  if (want("userContext")) {
+    const conclusions = userCtx ? userCtx.conclusions ?? extractConclusions(userCtx.context) : [];
+    if (!userCtx) {
+      unavailable("user context");
+    } else if (conclusions.length === 0) {
+      empty(userCtx.conclusions ? `no conclusions kept (query: ${userCtx.queryLabel})` : "no conclusions matched");
+    } else {
       parts.push(`Relevant conclusions: ${conclusions.join("; ")}`);
-    }
-    if (conclusions.length > 0 || userCtx.conclusions) {
       visLines.push(visInjectionMessage("user-prompt", { conclusions, matched: userCtx.matched, queryLabel: userCtx.queryLabel, showContents: show("userContext") }));
     }
   }
-  if (assistantCtx) {
-    const conclusions = extractConclusions(assistantCtx);
-    if (conclusions.length > 0) {
+  if (want("assistantContext")) {
+    const conclusions = assistantCtx ? extractConclusions(assistantCtx) : [];
+    if (!assistantCtx) {
+      unavailable("assistant context");
+    } else if (conclusions.length === 0) {
+      empty(`no conclusions about ${config.aiPeer} matched`);
+    } else {
       parts.push(`Conclusions about the assistant (${config.aiPeer}): ${conclusions.join("; ")}`);
       visLines.push(visInjectionMessage("user-prompt", { conclusions, queryLabel: `assistant ${config.aiPeer}`, showContents: show("assistantContext") }));
     }
   }
-  if (sessionCtx) {
-    parts.push(`Recent Honcho session messages:
+  if (want("sessionContext")) {
+    if (!sessionCtx) {
+      unavailable("session context");
+    } else if (sessionCtx.lines.length === 0) {
+      empty("no session messages yet");
+    } else {
+      parts.push(`Recent Honcho session messages:
 ${sessionCtx.lines.join(`
 `)}`);
-    visLines.push(visSessionContextMessage("user-prompt", sessionCtx.lines, sessionCtx.tokenCount, show("sessionContext")));
+      visLines.push(visSessionContextMessage("user-prompt", sessionCtx.lines, sessionCtx.tokenCount, show("sessionContext")));
+    }
   }
-  if (dialectic) {
-    parts.push(`Dialectic recall: ${dialectic.answer}`);
-    visLines.push(visDialecticMessage("user-prompt", dialectic.reasoning, dialectic.elapsedMs, dialectic.answer, show("dialectic")));
-  }
-  if (parts.length === 0) {
-    if (visLines.length > 0)
-      console.log(JSON.stringify({ systemMessage: visLines.join(`
-`) }));
-    return;
+  if (want("dialectic")) {
+    if (!dialectic) {
+      unavailable("dialectic");
+    } else if (!dialectic.answer) {
+      empty(`dialectic returned no answer (${dialectic.reasoning} · ${(dialectic.elapsedMs / 1000).toFixed(1)}s)`);
+    } else {
+      parts.push(`Dialectic recall: ${dialectic.answer}`);
+      visLines.push(visDialecticMessage("user-prompt", dialectic.reasoning, dialectic.elapsedMs, dialectic.answer, show("dialectic")));
+    }
   }
   const visMsg = visLines.join(`
 `);
-  outputContext(config.peerName, parts, sessionLink ? `${sessionLink}
-${visMsg}` : visMsg);
+  const systemMessage = banner ? `${banner}
+${visMsg}` : visMsg;
+  if (parts.length === 0) {
+    console.log(JSON.stringify({ systemMessage }));
+    return;
+  }
+  outputContext(config.peerName, parts, systemMessage);
 }
 async function fetchDialectic(config, prompt, injection, sessionName) {
   const honcho = new import_sdk.Honcho(getHonchoClientOptions(config));
@@ -17562,9 +17595,7 @@ async function fetchDialectic(config, prompt, injection, sessionName) {
     });
     const elapsedMs = Date.now() - startTime;
     logApiCall("peer.chat (dialectic)", "POST", `${reasoning}: ${query.slice(0, 60)}`, elapsedMs, true);
-    if (typeof answer !== "string" || !answer.trim())
-      return null;
-    return { answer: answer.trim(), reasoning, elapsedMs };
+    return { answer: typeof answer === "string" ? answer.trim() : "", reasoning, elapsedMs };
   } catch (e) {
     logHook("user-prompt", `Dialectic fetch failed: ${e}`);
     return null;
@@ -17678,8 +17709,6 @@ async function fetchSessionContext(config, sessionName, injection) {
     });
     logApiCall("session.context", "GET", sessionName, Date.now() - startTime, true);
     const messages = context?.messages ?? [];
-    if (!messages.length)
-      return null;
     const lines = messages.map((m) => `${m.peerId}: ${m.content}`);
     const tokenCount = messages.reduce((sum, m) => sum + (m.tokenCount ?? 0), 0);
     verboseApiResult("session.context() -> messages", lines.join(`
@@ -17720,5 +17749,5 @@ async function main() {
 // hooks/user-prompt.ts
 await main();
 
-//# debugId=3FE2EF516064B35C64756E2164756E21
+//# debugId=1C74C5136AAE24A064756E2164756E21
 

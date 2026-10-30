@@ -16085,7 +16085,7 @@ var import_sdk = __toESM(require_dist(), 1);
 import { homedir as homedir2 } from "os";
 import { join as join3, basename, dirname, resolve, sep } from "path";
 import { fileURLToPath } from "url";
-import { existsSync as existsSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync2, statSync, writeFileSync as writeFileSync2 } from "fs";
+import { chmodSync, existsSync as existsSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync2, statSync, writeFileSync as writeFileSync2 } from "fs";
 
 // src/git.ts
 import { execSync } from "child_process";
@@ -16434,6 +16434,11 @@ function mergeWithEnvVars(config) {
   }
   return config;
 }
+function writeConfigFile(data) {
+  if (existsSync3(CONFIG_FILE))
+    chmodSync(CONFIG_FILE, 384);
+  writeFileSync2(CONFIG_FILE, JSON.stringify(data, null, 2), { mode: 384 });
+}
 function saveConfig(config) {
   if (!existsSync3(CONFIG_DIR)) {
     mkdirSync2(CONFIG_DIR, { recursive: true });
@@ -16464,9 +16469,9 @@ function saveConfig(config) {
   setHostIfExplicit("aiPeer", config.aiPeer, existing.aiPeer ?? DEFAULT_AI_PEER[host]);
   const enabledForSave = process.env.HONCHO_ENABLED === "false" && config.enabled === false ? existingHost.enabled : config.enabled;
   const loggingForSave = process.env.HONCHO_LOGGING === "false" && config.logging === false ? existingHost.logging : config.logging;
+  const saveMessagesForSave = process.env.HONCHO_SAVE_MESSAGES === "false" && config.saveMessages === false ? existingHost.saveMessages : config.saveMessages;
   setHostIfExplicit("enabled", enabledForSave, existing.enabled);
   setHostIfExplicit("logging", loggingForSave, existing.logging);
-  const saveMessagesForSave = process.env.HONCHO_SAVE_MESSAGES === "false" && config.saveMessages === false ? existingHost.saveMessages : config.saveMessages;
   setHostIfExplicit("saveMessages", saveMessagesForSave, existing.saveMessages);
   setHostIfExplicit("sessionStrategy", config.sessionStrategy, existing.sessionStrategy);
   setHostIfExplicit("sessionPeerPrefix", config.sessionPeerPrefix, existing.sessionPeerPrefix);
@@ -16482,7 +16487,7 @@ function saveConfig(config) {
     hostEntry.apiKey = existingHost.apiKey;
   }
   existing.hosts[host] = hostEntry;
-  writeFileSync2(CONFIG_FILE, JSON.stringify(existing, null, 2));
+  writeConfigFile(existing);
 }
 function saveRootField(field, value) {
   if (!existsSync3(CONFIG_DIR)) {
@@ -16495,7 +16500,7 @@ function saveRootField(field, value) {
     } catch {}
   }
   existing[field] = value;
-  writeFileSync2(CONFIG_FILE, JSON.stringify(existing, null, 2));
+  writeConfigFile(existing);
 }
 function getClaudeSettingsPath() {
   return join3(homedir2(), ".claude", "settings.json");
@@ -16703,14 +16708,44 @@ function listItem(text, indent = 0) {
 }
 
 // src/skills/transcript-parse.ts
-import { existsSync as existsSync4, readFileSync as readFileSync3, readdirSync, statSync as statSync2 } from "fs";
+import { existsSync as existsSync5, readFileSync as readFileSync3, readdirSync, statSync as statSync2 } from "fs";
 import { homedir as homedir3 } from "os";
 import { join as join4 } from "path";
 
 // src/prompt-filters.ts
-var LEADING_REMINDERS = /^(?:\s*<system-reminder>[\s\S]*?<\/system-reminder>)+\s*/;
+import { existsSync as existsSync4 } from "fs";
+var HARNESS_INJECTED_PATTERNS = [
+  /^<task-notification(?=[\s/>])/,
+  /^<cross-session-message(?=[\s/>])/,
+  /^<agent-message(?=[\s/>])/,
+  /^<channel(?=[\s/>])/,
+  /^<local-command-caveat(?=[\s/>])/,
+  /^<local-command-stdout>/,
+  /^<command-name>/,
+  /^<command-message>/,
+  /^<system-reminder(?=[\s/>])/,
+  /^<bash-(stdout|stderr|input)>/,
+  /^<<[\w-]+>>$/
+];
+var LEADING_REMINDERS = /^(?:\s*<system-reminder(?=[\s>])[^>]*>[\s\S]*?<\/system-reminder>)+\s*/;
 function stripLeadingReminders(prompt) {
   return prompt.replace(LEADING_REMINDERS, "");
+}
+var MESSAGE_PREAMBLE = /^Another Claude session sent a message:\s*/;
+var SLASH_COMMAND_ENVELOPE = /^<command-(name|message)>/;
+function isHarnessInjected(prompt) {
+  const trimmed = stripLeadingReminders(prompt).trim().replace(MESSAGE_PREAMBLE, "");
+  return !trimmed || HARNESS_INJECTED_PATTERNS.some((p) => p.test(trimmed));
+}
+var SLASH_COMMAND = /^\/([\w:-]+)(?:\s|$)/;
+function isSlashCommand(prompt) {
+  const trimmed = stripLeadingReminders(prompt).trim();
+  if (SLASH_COMMAND_ENVELOPE.test(trimmed))
+    return true;
+  const name = SLASH_COMMAND.exec(trimmed)?.[1];
+  if (!name)
+    return false;
+  return name.includes(":") || !existsSync4(`/${name}`);
 }
 
 // src/skills/transcript-parse.ts
@@ -16720,10 +16755,8 @@ function entryType(entry) {
 function isRealUserPrompt(entry) {
   if (entry.isMeta)
     return false;
-  const mc = entry.message?.content ?? entry.content;
-  const text = typeof mc === "string" ? mc : Array.isArray(mc) ? mc.filter((b) => b.type === "text" && b.text).map((b) => b.text).join("") : "";
-  const trimmed = stripLeadingReminders(text).trim();
-  return trimmed.length > 0 && !trimmed.startsWith("<");
+  const text = userText(entry);
+  return !isHarnessInjected(text) && !isSlashCommand(text);
 }
 function userText(entry) {
   const mc = entry.message?.content ?? entry.content;
@@ -16745,7 +16778,7 @@ function assistantText(entry) {
   return "";
 }
 function readLines(transcriptPath) {
-  if (!transcriptPath || !existsSync4(transcriptPath))
+  if (!transcriptPath || !existsSync5(transcriptPath))
     return [];
   try {
     return readFileSync3(transcriptPath, "utf-8").split(`
@@ -16799,7 +16832,7 @@ function parseTranscriptForBackfill(transcriptPath) {
 }
 var PROJECTS_DIR = join4(homedir3(), ".claude", "projects");
 function findTranscripts(days) {
-  if (!existsSync4(PROJECTS_DIR))
+  if (!existsSync5(PROJECTS_DIR))
     return [];
   const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
   const out = [];
@@ -16830,7 +16863,7 @@ function findTranscripts(days) {
 }
 
 // src/skills/setup.ts
-import { copyFileSync, chmodSync, existsSync as existsSync5, mkdirSync as mkdirSync3, readFileSync as readFileSync4, writeFileSync as writeFileSync3 } from "fs";
+import { copyFileSync, chmodSync as chmodSync2, existsSync as existsSync6, mkdirSync as mkdirSync3, readFileSync as readFileSync4, writeFileSync as writeFileSync3 } from "fs";
 import { dirname as dirname2, join as join5 } from "path";
 import { fileURLToPath as fileURLToPath2 } from "url";
 function installStatusline() {
@@ -16838,24 +16871,24 @@ function installStatusline() {
   const src = join5(dirname2(fileURLToPath2(import.meta.url)), "..", "..", "scripts", "honcho-statusline.sh");
   const dest = join5(getConfigDir(), "honcho-statusline.sh");
   try {
-    if (!existsSync5(getConfigDir()))
+    if (!existsSync6(getConfigDir()))
       mkdirSync3(getConfigDir(), { recursive: true });
     copyFileSync(src, dest);
-    chmodSync(dest, 493);
+    chmodSync2(dest, 493);
     console.log(success(`Renderer installed at ${dest}`));
   } catch (err) {
     console.log(warn(`Could not install renderer: ${err instanceof Error ? err.message : String(err)}`));
     return;
   }
   try {
-    const raw = existsSync5(getConfigPath()) ? JSON.parse(readFileSync4(getConfigPath(), "utf-8")) : {};
+    const raw = existsSync6(getConfigPath()) ? JSON.parse(readFileSync4(getConfigPath(), "utf-8")) : {};
     if (raw.statusline === undefined)
       saveRootField("statusline", "on");
   } catch {}
   const settingsPath = getClaudeSettingsPath();
   let settings = {};
   try {
-    if (existsSync5(settingsPath))
+    if (existsSync6(settingsPath))
       settings = JSON.parse(readFileSync4(settingsPath, "utf-8"));
   } catch {
     console.log(warn(`Could not parse ${settingsPath} — add the statusLine entry manually:`));
@@ -16887,7 +16920,7 @@ function installStatusline() {
   }
   settings.statusLine = { type: "command", command: dest, refreshInterval: REFRESH };
   try {
-    if (!existsSync5(getClaudeSettingsDir()))
+    if (!existsSync6(getClaudeSettingsDir()))
       mkdirSync3(getClaudeSettingsDir(), { recursive: true });
     writeFileSync3(settingsPath, JSON.stringify(settings, null, 2));
     console.log(success("statusLine registered in ~/.claude/settings.json"));
@@ -16991,5 +17024,5 @@ async function setup() {
 // src/skills/setup-runner.ts
 await setup();
 
-//# debugId=6A9C79E92D6AB57A64756E2164756E21
+//# debugId=B182A8F07FD7B74464756E2164756E21
 

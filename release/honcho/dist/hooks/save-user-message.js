@@ -16098,7 +16098,7 @@ var import_sdk = __toESM(require_dist(), 1);
 import { homedir as homedir2 } from "os";
 import { join as join3, basename, dirname, resolve, sep } from "path";
 import { fileURLToPath } from "url";
-import { existsSync as existsSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync2, statSync, writeFileSync as writeFileSync2 } from "fs";
+import { chmodSync, existsSync as existsSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync2, statSync, writeFileSync as writeFileSync2 } from "fs";
 
 // src/git.ts
 import { execSync } from "child_process";
@@ -16671,6 +16671,11 @@ function mergeWithEnvVars(config) {
   }
   return config;
 }
+function writeConfigFile(data) {
+  if (existsSync3(CONFIG_FILE))
+    chmodSync(CONFIG_FILE, 384);
+  writeFileSync2(CONFIG_FILE, JSON.stringify(data, null, 2), { mode: 384 });
+}
 function saveConfig(config) {
   if (!existsSync3(CONFIG_DIR)) {
     mkdirSync2(CONFIG_DIR, { recursive: true });
@@ -16701,9 +16706,9 @@ function saveConfig(config) {
   setHostIfExplicit("aiPeer", config.aiPeer, existing.aiPeer ?? DEFAULT_AI_PEER[host]);
   const enabledForSave = process.env.HONCHO_ENABLED === "false" && config.enabled === false ? existingHost.enabled : config.enabled;
   const loggingForSave = process.env.HONCHO_LOGGING === "false" && config.logging === false ? existingHost.logging : config.logging;
+  const saveMessagesForSave = process.env.HONCHO_SAVE_MESSAGES === "false" && config.saveMessages === false ? existingHost.saveMessages : config.saveMessages;
   setHostIfExplicit("enabled", enabledForSave, existing.enabled);
   setHostIfExplicit("logging", loggingForSave, existing.logging);
-  const saveMessagesForSave = process.env.HONCHO_SAVE_MESSAGES === "false" && config.saveMessages === false ? existingHost.saveMessages : config.saveMessages;
   setHostIfExplicit("saveMessages", saveMessagesForSave, existing.saveMessages);
   setHostIfExplicit("sessionStrategy", config.sessionStrategy, existing.sessionStrategy);
   setHostIfExplicit("sessionPeerPrefix", config.sessionPeerPrefix, existing.sessionPeerPrefix);
@@ -16719,7 +16724,7 @@ function saveConfig(config) {
     hostEntry.apiKey = existingHost.apiKey;
   }
   existing.hosts[host] = hostEntry;
-  writeFileSync2(CONFIG_FILE, JSON.stringify(existing, null, 2));
+  writeConfigFile(existing);
 }
 function saveRootField(field, value) {
   if (!existsSync3(CONFIG_DIR)) {
@@ -16732,7 +16737,7 @@ function saveRootField(field, value) {
     } catch {}
   }
   existing[field] = value;
-  writeFileSync2(CONFIG_FILE, JSON.stringify(existing, null, 2));
+  writeConfigFile(existing);
 }
 function resolveWorktreeMainRoot(dir) {
   try {
@@ -16896,6 +16901,9 @@ function getHonchoClientOptions(config) {
     maxRetries: 1,
     defaultHeaders: getTelemetryHeaders()
   };
+}
+function isProductionEndpoint(config) {
+  return getHonchoBaseUrl(config) === HONCHO_BASE_URLS.production;
 }
 function getEndpointInfo(config) {
   if (config.endpoint?.baseUrl) {
@@ -17085,30 +17093,43 @@ function logAsync(operation, message, results) {
 }
 
 // src/prompt-filters.ts
+import { existsSync as existsSync5 } from "fs";
 var TRIVIAL_REPLY_PATTERN = /^(yes|no|ok|sure|thanks|y|n|yep|nope|yeah|nah|continue|go ahead|do it|proceed)$/i;
 function isTerseReply(prompt) {
   return TRIVIAL_REPLY_PATTERN.test(prompt.trim());
 }
 var HARNESS_INJECTED_PATTERNS = [
-  /^<task-notification>/,
+  /^<task-notification(?=[\s/>])/,
+  /^<cross-session-message(?=[\s/>])/,
+  /^<agent-message(?=[\s/>])/,
+  /^<channel(?=[\s/>])/,
+  /^<local-command-caveat(?=[\s/>])/,
   /^<local-command-stdout>/,
   /^<command-name>/,
   /^<command-message>/,
-  /^<system-reminder>/,
+  /^<system-reminder(?=[\s/>])/,
   /^<bash-(stdout|stderr|input)>/,
-  /^<cross-session-message[\s>]/,
-  /^<channel[\s>]/,
-  /^<agent-message[\s>]/,
   /^<<[\w-]+>>$/
 ];
-var LEADING_REMINDERS = /^(?:\s*<system-reminder>[\s\S]*?<\/system-reminder>)+\s*/;
+var LEADING_REMINDERS = /^(?:\s*<system-reminder(?=[\s>])[^>]*>[\s\S]*?<\/system-reminder>)+\s*/;
 function stripLeadingReminders(prompt) {
   return prompt.replace(LEADING_REMINDERS, "");
 }
 var MESSAGE_PREAMBLE = /^Another Claude session sent a message:\s*/;
+var SLASH_COMMAND_ENVELOPE = /^<command-(name|message)>/;
 function isHarnessInjected(prompt) {
   const trimmed = stripLeadingReminders(prompt).trim().replace(MESSAGE_PREAMBLE, "");
   return !trimmed || HARNESS_INJECTED_PATTERNS.some((p) => p.test(trimmed));
+}
+var SLASH_COMMAND = /^\/([\w:-]+)(?:\s|$)/;
+function isSlashCommand(prompt) {
+  const trimmed = stripLeadingReminders(prompt).trim();
+  if (SLASH_COMMAND_ENVELOPE.test(trimmed))
+    return true;
+  const name = SLASH_COMMAND.exec(trimmed)?.[1];
+  if (!name)
+    return false;
+  return name.includes(":") || !existsSync5(`/${name}`);
 }
 
 // src/hooks/save-user-message.ts
@@ -17137,8 +17158,8 @@ async function handleSaveUserMessage() {
   const instanceId = hookInput.session_id || getInstanceIdForCwd(cwd);
   const sessionName = getSessionName(cwd, instanceId || undefined);
   setLogContext(cwd, sessionName);
-  if (isHarnessInjected(prompt)) {
-    logHook("save-user-message", "Skipping upload (harness-injected content, not user input)");
+  if (isHarnessInjected(prompt) || isSlashCommand(prompt)) {
+    logHook("save-user-message", "Skipping upload (slash command or harness-injected content)");
     process.exit(0);
   }
   try {
@@ -17177,5 +17198,5 @@ async function main() {
 // hooks/save-user-message.ts
 await main();
 
-//# debugId=E39D68E00DCFC27864756E2164756E21
+//# debugId=20F545E9AA6206B964756E2164756E21
 

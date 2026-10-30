@@ -11,7 +11,7 @@
           },
           {
             "type": "command",
-            "command": "bun ${CLAUDE_PLUGIN_ROOT}/dist/hooks/session-start.js",
+            "command": "bun \"${CLAUDE_PLUGIN_ROOT}/dist/hooks/session-start.js\"",
             "timeout": 30
           }
         ]
@@ -22,7 +22,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bun ${CLAUDE_PLUGIN_ROOT}/dist/hooks/session-end.js",
+            "command": "bun \"${CLAUDE_PLUGIN_ROOT}/dist/hooks/session-end.js\"",
             "timeout": 5
           }
         ]
@@ -34,7 +34,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bun ${CLAUDE_PLUGIN_ROOT}/dist/hooks/post-tool-use.js",
+            "command": "bun \"${CLAUDE_PLUGIN_ROOT}/dist/hooks/post-tool-use.js\"",
             "timeout": 10,
             "async": true
           }
@@ -47,7 +47,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bun ${CLAUDE_PLUGIN_ROOT}/dist/hooks/pre-tool-honcho.js",
+            "command": "bun \"${CLAUDE_PLUGIN_ROOT}/dist/hooks/pre-tool-honcho.js\"",
             "timeout": 4
           }
         ]
@@ -58,12 +58,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bun ${CLAUDE_PLUGIN_ROOT}/dist/hooks/user-prompt.js",
+            "command": "bun \"${CLAUDE_PLUGIN_ROOT}/dist/hooks/user-prompt.js\"",
             "timeout": 125
           },
           {
             "type": "command",
-            "command": "bun ${CLAUDE_PLUGIN_ROOT}/dist/hooks/save-user-message.js",
+            "command": "bun \"${CLAUDE_PLUGIN_ROOT}/dist/hooks/save-user-message.js\"",
             "timeout": 30,
             "async": true
           }
@@ -76,7 +76,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bun ${CLAUDE_PLUGIN_ROOT}/dist/hooks/pre-compact.js",
+            "command": "bun \"${CLAUDE_PLUGIN_ROOT}/dist/hooks/pre-compact.js\"",
             "timeout": 20
           }
         ]
@@ -86,7 +86,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bun ${CLAUDE_PLUGIN_ROOT}/dist/hooks/pre-compact.js",
+            "command": "bun \"${CLAUDE_PLUGIN_ROOT}/dist/hooks/pre-compact.js\"",
             "timeout": 20
           }
         ]
@@ -97,13 +97,13 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bun ${CLAUDE_PLUGIN_ROOT}/dist/hooks/stop.js",
+            "command": "bun \"${CLAUDE_PLUGIN_ROOT}/dist/hooks/stop.js\"",
             "timeout": 10,
             "async": true
           },
           {
             "type": "command",
-            "command": "bun ${CLAUDE_PLUGIN_ROOT}/dist/hooks/recall-topic.js",
+            "command": "bun \"${CLAUDE_PLUGIN_ROOT}/dist/hooks/recall-topic.js\"",
             "timeout": 90,
             "async": true
           }
