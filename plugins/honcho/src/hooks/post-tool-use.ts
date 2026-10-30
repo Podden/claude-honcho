@@ -14,6 +14,27 @@ interface HookInput {
   workspace_roots?: string[];
 }
 
+// Read-only / navigation commands that carry no memory signal.
+const TRIVIAL_COMMANDS = new Set([
+  "cd", "ls", "pwd", "echo", "cat", "head", "tail", "which", "type",
+  "git status", "git log", "git diff",
+]);
+
+// Wrappers that run the real command as their arguments, so `rtk git status`
+// is still `git status`. A user who routes every command through one of these
+// would otherwise defeat the list entirely and log all of it as real work.
+const COMMAND_WRAPPERS = new Set(["rtk", "sudo", "doas", "env", "time", "command", "nice"]);
+
+export function isTrivialCommand(command: string): boolean {
+  const tokens = command.trim().split(/\s+/);
+  while (tokens.length > 1 && COMMAND_WRAPPERS.has(tokens[0])) {
+    tokens.shift();
+  }
+  // Whole tokens, not a string prefix: `startsWith("cd")` also swallowed
+  // `cdk deploy`, and `startsWith("cat")` swallowed `catalog-build`.
+  return TRIVIAL_COMMANDS.has(tokens[0]) || TRIVIAL_COMMANDS.has(tokens.slice(0, 2).join(" "));
+}
+
 function shouldLogTool(toolName: string, toolInput: Record<string, any>): boolean {
   const significantTools = new Set(["Write", "Edit", "Bash", "Task", "NotebookEdit"]);
 
@@ -21,13 +42,8 @@ function shouldLogTool(toolName: string, toolInput: Record<string, any>): boolea
     return false;
   }
 
-  if (toolName === "Bash") {
-    const command = toolInput.command || "";
-    // Skip read-only / navigation commands that carry no memory signal.
-    const trivialCommands = ["cd", "ls", "pwd", "echo", "cat", "head", "tail", "which", "type", "git status", "git log", "git diff"];
-    if (trivialCommands.some((cmd) => command.trim().startsWith(cmd))) {
-      return false;
-    }
+  if (toolName === "Bash" && isTrivialCommand(toolInput.command || "")) {
+    return false;
   }
 
   return true;
@@ -192,8 +208,8 @@ export async function handlePostToolUse(): Promise<void> {
     process.exit(0);
   }
 
-  // Early exit if plugin is disabled
-  if (!isPluginEnabled()) {
+  // Early exit if plugin is disabled, or if [Tool] uploads aren't opted in
+  if (!isPluginEnabled() || config.saveMessages === false || config.saveToolUse !== true) {
     process.exit(0);
   }
 
@@ -224,20 +240,19 @@ export async function handlePostToolUse(): Promise<void> {
     config.redactPatterns
   );
   logHook("post-tool-use", summary, { tool: toolName });
-  visCapture(summary);
 
   // Upload to Honcho and wait for completion
-  await logToHonchoAsync(config, cwd, summary).catch((e) => logHook("post-tool-use", `Upload failed: ${e}`, { error: String(e) }));
+  try {
+    await logToHonchoAsync(config, cwd, summary);
+    visCapture(summary);
+  } catch (e) {
+    logHook("post-tool-use", `Upload failed: ${e}`, { error: String(e) });
+  }
 
   process.exit(0);
 }
 
 async function logToHonchoAsync(config: any, cwd: string, summary: string): Promise<void> {
-  // Skip if message saving is disabled, or if [Tool] logging isn't opted in.
-  if (config.saveMessages === false || config.saveToolUse !== true) {
-    return;
-  }
-
   const honcho = new Honcho(getHonchoClientOptions(config));
   const sessionName = getSessionName(cwd);
 
