@@ -124,6 +124,38 @@ export async function scoreRelevance(cfg: RecallPipelineConfig, task: string, fa
   }
 }
 
+// Validated 2026-10-30 on d1-3B (50 hand-labelled topic/prompt pairs from 11
+// projects, German prompts against English topics): AUC 0.90; P(A) < 0.2 caught
+// 12/16 topic switches at 3/34 false switches. Translating the prompt to English
+// first did not help (AUC 0.89) and would add ~0.5 s.
+const SAME_TASK_QUESTION = {
+  same: {
+    type: "choice",
+    instructions: "Is `message` about the same task as `topic`, or does it start a different subject?",
+    criteria: {
+      A: "same task: a follow-up, question, correction, confirmation or status remark about `topic` or the systems in it",
+      B: "different subject: a new problem, project, device or request unrelated to `topic`",
+    },
+  },
+};
+
+/** P(the prompt continues the topic), or null when the decision model is unreachable. */
+export async function scoreSameTask(cfg: RecallPipelineConfig, topic: string, prompt: string, timeoutMs: number): Promise<number | null> {
+  try {
+    const res = await fetch(`${cfg.rerankUrl.replace(/\/$/, "")}/v1/systemone`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(timeoutMs),
+      body: JSON.stringify({ state: { topic, message: prompt.slice(0, 1500) }, questions: SAME_TASK_QUESTION }),
+    });
+    if (!res.ok) return null;
+    const p = (await res.json())?.answers?.same?.probabilities?.A;
+    return typeof p === "number" ? p : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Facts at or above the threshold, best first, capped at maxInject. */
 export function selectRelevant(facts: string[], scores: number[], threshold: number, maxInject: number): string[] {
   return facts

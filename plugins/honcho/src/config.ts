@@ -145,6 +145,9 @@ export interface RecallPipelineConfig {
   maxInject?: number;
   /** Max cosine distance for the candidate search (default 0.6). */
   maxDistance?: number;
+  /** Treat the prompt as a topic switch, and recall from the prompt alone, when
+   *  P(prompt continues the stored topic) is below this (default 0.2). */
+  shiftThreshold?: number;
 }
 
 export type RecallScope = "peer" | "session" | "scope";

@@ -10,7 +10,7 @@ import {
 import { logHook, logApiCall, setLogContext } from "../log.js";
 import { visInjectionMessage, visDialecticMessage, visSessionContextMessage, visSkipMessage, visEmptyComponent, addSystemMessage, verboseApiResult, verboseList } from "../visual.js";
 import type { ReasoningLevel, RecallPipelineConfig } from "../config.js";
-import { readRecallTopic, scoreRelevance, selectRelevant } from "../recall.js";
+import { readRecallTopic, scoreRelevance, scoreSameTask, selectRelevant } from "../recall.js";
 import { honchoSessionUrl } from "../styles.js";
 import { setMemoryState, setSessionLink } from "../state.js";
 import { isHarnessInjected, isSlashCommand, isTerseReply, stripLeadingReminders } from "../prompt-filters.js";
@@ -35,6 +35,8 @@ const DIALECTIC_TIMEOUT_MS = 120000;
 // single-worker decision model (~100 ms each when warm).
 const RECALL_TIMEOUT_MS = 8000;
 const RERANK_TIMEOUT_MS = 6000;
+// Topic-switch check: one call, ~50 ms warm. Longer means d1 is cold or evicted.
+const SHIFT_TIMEOUT_MS = 1500;
 const RECALL_MAX_CANDIDATES = 16;
 
 /** Resolve a promise with its value, or null if `ms` elapses or it rejects. */
@@ -380,7 +382,17 @@ async function fetchRecallContext(
   const target = unified ? undefined : config.peerName;
   const startTime = Date.now();
 
-  const cached = sessionId ? readRecallTopic(sessionId) : null;
+  // On a topic switch the stored topic would steer both search and rerank to
+  // the previous subject, so the prompt alone drives recall for that turn.
+  const stored = sessionId ? readRecallTopic(sessionId) : null;
+  const pSame = stored ? await scoreSameTask(recall, stored.topic, prompt, SHIFT_TIMEOUT_MS) : null;
+  if (stored && pSame === null) {
+    // Same server as the reranker, which would fail closed after its own timeout.
+    logHook("user-prompt", `Decision model unreachable at ${recall.rerankUrl}; injecting nothing`);
+    return null;
+  }
+  const cached = stored && pSame! >= (recall.shiftThreshold ?? 0.2) ? stored : null;
+  if (stored && !cached) logHook("user-prompt", `Topic switch (P(same)=${pSame!.toFixed(2)}); recalling from the prompt alone`);
   const task = cached ? `${cached.topic}\nLatest user message: ${prompt.slice(0, 500)}` : prompt.slice(0, 1500);
   const queries = [...(cached?.queries ?? []), prompt.slice(0, 1000)];
   const perQuery = Math.max(2, Math.ceil(Math.min(recall.candidates ?? 12, RECALL_MAX_CANDIDATES) / queries.length));
@@ -398,7 +410,7 @@ async function fetchRecallContext(
     }).catch(() => null)
   ));
   const candidates = [...new Set(reps.flatMap((r) => extractConclusions({ representation: r })))].slice(0, RECALL_MAX_CANDIDATES);
-  const label = cached ? `topic "${cached.topic.slice(0, 70)}"` : "prompt";
+  const label = cached ? `topic "${cached.topic.slice(0, 70)}"` : stored ? "prompt (topic switch)" : "prompt";
   if (candidates.length === 0) return { context: null, conclusions: [], queryLabel: `${label}, no candidates` };
 
   const scores = await scoreRelevance(recall, task, candidates, RERANK_TIMEOUT_MS);

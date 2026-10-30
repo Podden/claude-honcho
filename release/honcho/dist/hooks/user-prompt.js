@@ -17307,6 +17307,32 @@ async function scoreRelevance(cfg, task, facts, timeoutMs) {
     return null;
   }
 }
+var SAME_TASK_QUESTION = {
+  same: {
+    type: "choice",
+    instructions: "Is `message` about the same task as `topic`, or does it start a different subject?",
+    criteria: {
+      A: "same task: a follow-up, question, correction, confirmation or status remark about `topic` or the systems in it",
+      B: "different subject: a new problem, project, device or request unrelated to `topic`"
+    }
+  }
+};
+async function scoreSameTask(cfg, topic, prompt, timeoutMs) {
+  try {
+    const res = await fetch(`${cfg.rerankUrl.replace(/\/$/, "")}/v1/systemone`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(timeoutMs),
+      body: JSON.stringify({ state: { topic, message: prompt.slice(0, 1500) }, questions: SAME_TASK_QUESTION })
+    });
+    if (!res.ok)
+      return null;
+    const p = (await res.json())?.answers?.same?.probabilities?.A;
+    return typeof p === "number" ? p : null;
+  } catch {
+    return null;
+  }
+}
 function selectRelevant(facts, scores, threshold, maxInject) {
   return facts.map((fact, i) => ({ fact, p: scores[i] })).filter((x) => x.p >= threshold).sort((a, b) => b.p - a.p).slice(0, maxInject).map((x) => x.fact);
 }
@@ -17405,6 +17431,7 @@ var FETCH_TIMEOUT_MS = 4000;
 var DIALECTIC_TIMEOUT_MS = 120000;
 var RECALL_TIMEOUT_MS = 8000;
 var RERANK_TIMEOUT_MS = 6000;
+var SHIFT_TIMEOUT_MS = 1500;
 var RECALL_MAX_CANDIDATES = 16;
 function raceTimeout(p, ms) {
   return Promise.race([
@@ -17607,7 +17634,15 @@ async function fetchRecallContext(config, prompt, injection, recall, sessionName
   const peer = await honcho.peer(unified ? config.peerName : config.aiPeer);
   const target = unified ? undefined : config.peerName;
   const startTime = Date.now();
-  const cached = sessionId ? readRecallTopic(sessionId) : null;
+  const stored = sessionId ? readRecallTopic(sessionId) : null;
+  const pSame = stored ? await scoreSameTask(recall, stored.topic, prompt, SHIFT_TIMEOUT_MS) : null;
+  if (stored && pSame === null) {
+    logHook("user-prompt", `Decision model unreachable at ${recall.rerankUrl}; injecting nothing`);
+    return null;
+  }
+  const cached = stored && pSame >= (recall.shiftThreshold ?? 0.2) ? stored : null;
+  if (stored && !cached)
+    logHook("user-prompt", `Topic switch (P(same)=${pSame.toFixed(2)}); recalling from the prompt alone`);
   const task = cached ? `${cached.topic}
 Latest user message: ${prompt.slice(0, 500)}` : prompt.slice(0, 1500);
   const queries = [...cached?.queries ?? [], prompt.slice(0, 1000)];
@@ -17623,7 +17658,7 @@ Latest user message: ${prompt.slice(0, 500)}` : prompt.slice(0, 1500);
     ...boundary
   }).catch(() => null)));
   const candidates = [...new Set(reps.flatMap((r) => extractConclusions({ representation: r })))].slice(0, RECALL_MAX_CANDIDATES);
-  const label = cached ? `topic "${cached.topic.slice(0, 70)}"` : "prompt";
+  const label = cached ? `topic "${cached.topic.slice(0, 70)}"` : stored ? "prompt (topic switch)" : "prompt";
   if (candidates.length === 0)
     return { context: null, conclusions: [], queryLabel: `${label}, no candidates` };
   const scores = await scoreRelevance(recall, task, candidates, RERANK_TIMEOUT_MS);
@@ -17749,5 +17784,5 @@ async function main() {
 // hooks/user-prompt.ts
 await main();
 
-//# debugId=1C74C5136AAE24A064756E2164756E21
+//# debugId=DE04D5E1DEA0E83164756E2164756E21
 

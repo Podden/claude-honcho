@@ -28,11 +28,11 @@ sed -i 's|"command": "node |"command": "bun |g' release/honcho/hooks/hooks.json
 bash plugins/honcho/scripts/smoke.sh "$PWD/release/honcho"
 ```
 
-On Windows, `smoke.sh` and the prompt-hook tests set only `HOME`, but
-`os.homedir()` reads `USERPROFILE` there. They then run against the real
-`~/.honcho/config.json`, and the prompt-hook tests upload fixture prompts to
-the live workspace (session `project`). Export `USERPROFILE` to the sandbox
-home as well, or run the tests on Linux/macOS.
+`smoke.sh` and the sandboxed tests set `USERPROFILE` next to `HOME`: on
+Windows `os.homedir()` reads only `USERPROFILE`, and with `HOME` alone they ran
+against the real `~/.honcho/config.json` and uploaded fixture prompts to the
+live workspace (session `project`). The three `isSlashCommand` cases for `/tmp`
+and `/etc` still fail on Windows.
 
 The hooks run under bun, not node: on Windows, Node 24.19 aborts the bundled
 `user-prompt` hook at exit (`Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)`,

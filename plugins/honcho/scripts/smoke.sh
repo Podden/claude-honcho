@@ -19,6 +19,8 @@ cd "$SMOKE"
 # (Standalone assignment so a mktemp failure propagates under set -e.)
 TMP_HOME="$(mktemp -d)"
 export HOME="$TMP_HOME"
+# homedir() reads USERPROFILE on Windows and ignores HOME.
+export USERPROFILE="$(cygpath -w "$HOME" 2>/dev/null || printf %s "$HOME")"
 mkdir -p "$HOME/.honcho"
 echo '{"apiKey":"smoke","enabled":false}' > "$HOME/.honcho/config.json"
 
@@ -53,6 +55,7 @@ bounded node dist/skills/backfill-runner.js --dry-run </dev/null >/dev/null
 # not-configured paths (a configured run would validate the connection).
 TMP_HOME="$(mktemp -d)"
 export HOME="$TMP_HOME"
+export USERPROFILE="$(cygpath -w "$HOME" 2>/dev/null || printf %s "$HOME")"
 unset HONCHO_API_KEY
 
 # Setup exits 1 by design when no key is found; assert it reached that

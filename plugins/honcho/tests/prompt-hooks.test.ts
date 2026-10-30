@@ -41,7 +41,7 @@ describe("UserPromptSubmit hooks", () => {
       const invoke = async (hook: string, prompt: string) => {
         const proc = Bun.spawn([process.execPath, `hooks/${hook}.ts`], {
           cwd: join(import.meta.dir, ".."),
-          env: { ...base, HOME: home },
+          env: { ...base, HOME: home, USERPROFILE: home },
           stdin: new Blob([JSON.stringify({ prompt, cwd: join(home, "project"), session_id: "fixture" })]),
           stdout: "pipe",
           stderr: "pipe",
