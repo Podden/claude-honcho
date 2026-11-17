@@ -6512,7 +6512,7 @@ var require_api_version = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.VERSION = exports.API_VERSION = undefined;
   exports.API_VERSION = "v3";
-  exports.VERSION = "2.5.0";
+  exports.VERSION = "2.9.0";
 });
 
 // node_modules/@honcho-ai/sdk/dist/http/errors.js
@@ -19916,7 +19916,7 @@ var require_zod = __commonJS((exports) => {
 // node_modules/@honcho-ai/sdk/dist/validation.js
 var require_validation2 = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
-  exports.ConclusionQueryParamsSchema = exports.LimitSchema = exports.WorkspaceConfigSchema = exports.WorkspaceMetadataSchema = exports.MessageAdditionToApiSchema = exports.MessageAdditionSchema = exports.PeerRemovalSchema = exports.PeerAdditionToApiSchema = exports.PeerAdditionSchema = exports.PeerCardContentSchema = exports.CardTargetSchema = exports.PeerGetRepresentationParamsSchema = exports.GetRepresentationParamsSchema = exports.FileUploadSchema = exports.QueueStatusOptionsSchema = exports.ContextParamsSchema = exports.RepresentationOptionsSchema = exports.ChatQuerySchema = exports.FilterSchema = exports.SearchQueryLikeSchema = exports.SearchQueryObjectSchema = exports.SearchQuerySchema = exports.MessageInputSchema = exports.MessageConfigurationSchema = exports.MessageMetadataSchema = exports.MessageContentSchema = exports.SessionPeerConfigSchema = exports.SessionAllowlistSchema = exports.SessionScopesSchema = exports.ScopeSessionsSchema = exports.ScopeOptionSchema = exports.ScopeIdSchema = exports.SessionIdSchema = exports.SessionConfigSchema = exports.DreamConfigSchema = exports.SummaryConfigSchema = exports.PeerCardConfigSchema = exports.ReasoningConfigSchema = exports.SessionMetadataSchema = exports.PeerIdSchema = exports.PeerConfigSchema = exports.PeerMetadataSchema = exports.HonchoConfigSchema = exports.WorkspaceIdSchema = undefined;
+  exports.ConclusionQueryParamsSchema = exports.LimitSchema = exports.WorkspaceConfigSchema = exports.WorkspaceMetadataSchema = exports.MessageAdditionToApiSchema = exports.MessageAdditionSchema = exports.PeerRemovalSchema = exports.PeerAdditionToApiSchema = exports.PeerAdditionSchema = exports.PeerCardContentSchema = exports.CardTargetSchema = exports.PeerGetRepresentationParamsSchema = exports.GetRepresentationParamsSchema = exports.FileUploadSchema = exports.QueueStatusOptionsSchema = exports.ContextParamsSchema = exports.RepresentationOptionsSchema = exports.ChatQuerySchema = exports.FilterSchema = exports.SearchQueryLikeSchema = exports.SearchQueryObjectSchema = exports.SearchQuerySchema = exports.MessageInputSchema = exports.MessageConfigurationSchema = exports.MessageMetadataSchema = exports.MessageContentSchema = exports.SessionPeerConfigSchema = exports.SessionAllowlistSchema = exports.SessionScopesSchema = exports.ScopeSessionsSchema = exports.ScopeOptionSchema = exports.ScopeIdSchema = exports.SessionIdSchema = exports.SessionConfigSchema = exports.DialecticConfigSchema = exports.DreamConfigSchema = exports.SummaryConfigSchema = exports.PeerCardConfigSchema = exports.ReasoningConfigSchema = exports.SessionMetadataSchema = exports.PeerIdSchema = exports.PeerConfigSchema = exports.PeerMetadataSchema = exports.HonchoConfigSchema = exports.WorkspaceIdSchema = undefined;
   exports.normalizeSearchQuery = normalizeSearchQuery;
   exports.normalizeListOptions = normalizeListOptions;
   exports.scopeRecallFields = scopeRecallFields;
@@ -19953,21 +19953,29 @@ var require_validation2 = __commonJS((exports) => {
   }).strict();
   exports.PeerCardConfigSchema = zod_1.z.object({
     use: zod_1.z.boolean().nullable().optional(),
-    create: zod_1.z.boolean().nullable().optional()
+    create: zod_1.z.boolean().nullable().optional(),
+    customInstructions: zod_1.z.string().nullable().optional()
   }).strict();
   exports.SummaryConfigSchema = zod_1.z.object({
     enabled: zod_1.z.boolean().nullable().optional(),
     messagesPerShortSummary: zod_1.z.number().int().min(10).nullable().optional(),
-    messagesPerLongSummary: zod_1.z.number().int().min(20).nullable().optional()
+    messagesPerLongSummary: zod_1.z.number().int().min(20).nullable().optional(),
+    customInstructions: zod_1.z.string().nullable().optional()
   }).strict();
   exports.DreamConfigSchema = zod_1.z.object({
-    enabled: zod_1.z.boolean().nullable().optional()
+    enabled: zod_1.z.boolean().nullable().optional(),
+    customInstructions: zod_1.z.string().nullable().optional()
+  }).strict();
+  exports.DialecticConfigSchema = zod_1.z.object({
+    customInstructions: zod_1.z.string().nullable().optional()
   }).strict();
   exports.SessionConfigSchema = zod_1.z.object({
+    customInstructions: zod_1.z.string().nullable().optional(),
     reasoning: exports.ReasoningConfigSchema.nullable().optional(),
     peerCard: exports.PeerCardConfigSchema.nullable().optional(),
     summary: exports.SummaryConfigSchema.nullable().optional(),
-    dream: exports.DreamConfigSchema.nullable().optional()
+    dream: exports.DreamConfigSchema.nullable().optional(),
+    dialectic: exports.DialecticConfigSchema.nullable().optional()
   }).strict();
   exports.SessionIdSchema = zod_1.z.string().min(1, "Session ID must be a non-empty string").regex(/^[a-zA-Z0-9_-]+$/, "Session ID may only contain letters, numbers, underscores, and hyphens").max(512, "Session ID can be at most 512 characters");
   var SessionIdObjectSchema = zod_1.z.object({ id: exports.SessionIdSchema });
@@ -20020,7 +20028,7 @@ var require_validation2 = __commonJS((exports) => {
     }
     addScopeIdIssues(Array.isArray(resolved) ? resolved : [resolved], ctx);
   });
-  exports.ScopeSessionsSchema = zod_1.z.array(exports.SessionIdSchema).min(1, "At least one session must be given").max(100, "At most 100 sessions can be added per call");
+  exports.ScopeSessionsSchema = zod_1.z.array(exports.SessionIdSchema).min(1, "At least one session must be given").max(100, "At most 100 sessions can be given per call");
   exports.SessionScopesSchema = zod_1.z.array(exports.ScopeIdSchema).min(1, "scopes must name at least one scope").max(100, "scopes can name at most 100 scopes");
   exports.SessionAllowlistSchema = zod_1.z.array(zod_1.z.union([exports.SessionIdSchema, SessionIdObjectSchema])).min(1, "sessions must name at least one session").max(1000, "sessions can name at most 1000 sessions").transform((vals) => vals.map((v) => typeof v === "string" ? v : v.id));
   exports.SessionPeerConfigSchema = zod_1.z.object({
@@ -20264,7 +20272,8 @@ var require_validation2 = __commonJS((exports) => {
       return;
     return {
       use: config2.use,
-      create: config2.create
+      create: config2.create,
+      custom_instructions: config2.customInstructions
     };
   }
   function peerCardConfigFromApi(config2) {
@@ -20274,7 +20283,8 @@ var require_validation2 = __commonJS((exports) => {
       return;
     return {
       use: config2.use,
-      create: config2.create
+      create: config2.create,
+      customInstructions: config2.custom_instructions
     };
   }
   function summaryConfigToApi(config2) {
@@ -20285,7 +20295,8 @@ var require_validation2 = __commonJS((exports) => {
     return {
       enabled: config2.enabled,
       messages_per_short_summary: config2.messagesPerShortSummary,
-      messages_per_long_summary: config2.messagesPerLongSummary
+      messages_per_long_summary: config2.messagesPerLongSummary,
+      custom_instructions: config2.customInstructions
     };
   }
   function summaryConfigFromApi(config2) {
@@ -20296,7 +20307,8 @@ var require_validation2 = __commonJS((exports) => {
     return {
       enabled: config2.enabled,
       messagesPerShortSummary: config2.messages_per_short_summary,
-      messagesPerLongSummary: config2.messages_per_long_summary
+      messagesPerLongSummary: config2.messages_per_long_summary,
+      customInstructions: config2.custom_instructions
     };
   }
   function dreamConfigToApi(config2) {
@@ -20305,7 +20317,8 @@ var require_validation2 = __commonJS((exports) => {
     if (config2 === undefined)
       return;
     return {
-      enabled: config2.enabled
+      enabled: config2.enabled,
+      custom_instructions: config2.customInstructions
     };
   }
   function dreamConfigFromApi(config2) {
@@ -20314,17 +20327,38 @@ var require_validation2 = __commonJS((exports) => {
     if (config2 === undefined)
       return;
     return {
-      enabled: config2.enabled
+      enabled: config2.enabled,
+      customInstructions: config2.custom_instructions
+    };
+  }
+  function dialecticConfigToApi(config2) {
+    if (config2 === null)
+      return null;
+    if (config2 === undefined)
+      return;
+    return {
+      custom_instructions: config2.customInstructions
+    };
+  }
+  function dialecticConfigFromApi(config2) {
+    if (config2 === null)
+      return null;
+    if (config2 === undefined)
+      return;
+    return {
+      customInstructions: config2.custom_instructions
     };
   }
   function workspaceConfigToApi(config2) {
     if (!config2)
       return;
     return {
+      custom_instructions: config2.customInstructions,
       reasoning: reasoningConfigToApi(config2.reasoning),
       peer_card: peerCardConfigToApi(config2.peerCard),
       summary: summaryConfigToApi(config2.summary),
-      dream: dreamConfigToApi(config2.dream)
+      dream: dreamConfigToApi(config2.dream),
+      dialectic: dialecticConfigToApi(config2.dialectic)
     };
   }
   function workspaceConfigFromApi(config2) {
@@ -20332,20 +20366,24 @@ var require_validation2 = __commonJS((exports) => {
       return;
     const apiConfig = config2;
     return {
+      customInstructions: apiConfig.custom_instructions,
       reasoning: reasoningConfigFromApi(apiConfig.reasoning),
       peerCard: peerCardConfigFromApi(apiConfig.peer_card),
       summary: summaryConfigFromApi(apiConfig.summary),
-      dream: dreamConfigFromApi(apiConfig.dream)
+      dream: dreamConfigFromApi(apiConfig.dream),
+      dialectic: dialecticConfigFromApi(apiConfig.dialectic)
     };
   }
   function sessionConfigToApi(config2) {
     if (!config2)
       return;
     return {
+      custom_instructions: config2.customInstructions,
       reasoning: reasoningConfigToApi(config2.reasoning),
       peer_card: peerCardConfigToApi(config2.peerCard),
       summary: summaryConfigToApi(config2.summary),
-      dream: dreamConfigToApi(config2.dream)
+      dream: dreamConfigToApi(config2.dream),
+      dialectic: dialecticConfigToApi(config2.dialectic)
     };
   }
   function sessionConfigFromApi(config2) {
@@ -20353,10 +20391,12 @@ var require_validation2 = __commonJS((exports) => {
       return;
     const apiConfig = config2;
     return {
+      customInstructions: apiConfig.custom_instructions,
       reasoning: reasoningConfigFromApi(apiConfig.reasoning),
       peerCard: peerCardConfigFromApi(apiConfig.peer_card),
       summary: summaryConfigFromApi(apiConfig.summary),
-      dream: dreamConfigFromApi(apiConfig.dream)
+      dream: dreamConfigFromApi(apiConfig.dream),
+      dialectic: dialecticConfigFromApi(apiConfig.dialectic)
     };
   }
   function messageConfigToApi(config2) {
@@ -20428,10 +20468,12 @@ var require_validation2 = __commonJS((exports) => {
   });
   exports.WorkspaceMetadataSchema = zod_1.z.record(zod_1.z.string(), zod_1.z.unknown());
   exports.WorkspaceConfigSchema = zod_1.z.object({
+    customInstructions: zod_1.z.string().nullable().optional(),
     reasoning: exports.ReasoningConfigSchema.nullable().optional(),
     peerCard: exports.PeerCardConfigSchema.nullable().optional(),
     summary: exports.SummaryConfigSchema.nullable().optional(),
-    dream: exports.DreamConfigSchema.nullable().optional()
+    dream: exports.DreamConfigSchema.nullable().optional(),
+    dialectic: exports.DialecticConfigSchema.nullable().optional()
   }).strict();
   exports.LimitSchema = zod_1.z.number().int().min(1, "Limit must be a positive integer").max(100, "Limit must be less than or equal to 100");
   exports.ConclusionQueryParamsSchema = zod_1.z.object({
@@ -20471,7 +20513,7 @@ var require_conclusions = __commonJS((exports) => {
   }
 
   class Conclusion {
-    constructor(id, content, observerId, observedId, sessionId, createdAt, level = "explicit", sourceIds = null, timesDerived = 1) {
+    constructor(id, content, observerId, observedId, sessionId, createdAt, level = "explicit", sourceIds = null, timesDerived = 1, sourceMessageIds = null) {
       this.id = id;
       this.content = content;
       this.observerId = observerId;
@@ -20480,10 +20522,11 @@ var require_conclusions = __commonJS((exports) => {
       this.level = level;
       this.sourceIds = sourceIds;
       this.timesDerived = timesDerived;
+      this.sourceMessageIds = sourceMessageIds;
       this.createdAt = createdAt;
     }
     static fromApiResponse(data) {
-      return new Conclusion(data.id, data.content, data.observer_id, data.observed_id, data.session_id, data.created_at, data.level, data.source_ids ?? null, data.times_derived ?? 1);
+      return new Conclusion(data.id, data.content, data.observer_id, data.observed_id, data.session_id, data.created_at, data.level, data.source_ids ?? null, data.times_derived ?? 1, data.source_message_ids ?? null);
     }
     toString() {
       const truncatedContent = this.content.length > 50 ? `${this.content.slice(0, 50)}...` : this.content;
@@ -21258,12 +21301,18 @@ var require_session = __commonJS((exports) => {
     get createdAt() {
       return this._createdAt;
     }
+    get uid() {
+      return this._uid;
+    }
     get isActive() {
       return this._isActive;
     }
+    get scopes() {
+      return this._scopes;
+    }
     constructor(id, workspaceId, http, metadata, configuration, ensureWorkspace = async () => {
       return;
-    }, createdAt, isActive) {
+    }, createdAt, isActive, uid, scopes) {
       this.id = id;
       this.workspaceId = workspaceId;
       this._http = http;
@@ -21272,12 +21321,15 @@ var require_session = __commonJS((exports) => {
       this._ensureWorkspace = ensureWorkspace;
       this._createdAt = createdAt;
       this._isActive = isActive;
+      this._uid = uid;
+      this._scopes = scopes;
     }
     _applySessionResponse(session) {
       this._metadata = session.metadata || {};
       this._configuration = (0, validation_1.sessionConfigFromApi)(session.configuration) || {};
       this._createdAt = session.created_at;
       this._isActive = session.is_active;
+      this._uid = session.uid;
     }
     async _getOrCreate(params) {
       await this._ensureWorkspace();
@@ -21401,7 +21453,7 @@ var require_session = __commonJS((exports) => {
     }
     async peers() {
       const peersPage = await this._listPeers();
-      return peersPage.items.map((peer) => new peer_1.Peer(peer.id, this.workspaceId, this._http, peer.metadata ?? undefined, (0, validation_1.peerConfigFromApi)(peer.configuration) ?? undefined, () => this._ensureWorkspace(), peer.created_at));
+      return peersPage.items.map((peer) => new peer_1.Peer(peer.id, this.workspaceId, this._http, peer.metadata ?? undefined, (0, validation_1.peerConfigFromApi)(peer.configuration) ?? undefined, () => this._ensureWorkspace(), peer.created_at, peer.uid));
     }
     async getPeerConfiguration(peer) {
       const peerId = typeof peer === "string" ? peer : peer.id;
@@ -21485,7 +21537,7 @@ var require_session = __commonJS((exports) => {
     }
     async clone(messageId) {
       const clonedSessionData = await this._clone(messageId ? { message_id: messageId } : undefined);
-      return new Session(clonedSessionData.id, this.workspaceId, this._http, clonedSessionData.metadata ?? undefined, (0, validation_1.sessionConfigFromApi)(clonedSessionData.configuration) ?? undefined, () => this._ensureWorkspace(), clonedSessionData.created_at, clonedSessionData.is_active);
+      return new Session(clonedSessionData.id, this.workspaceId, this._http, clonedSessionData.metadata ?? undefined, (0, validation_1.sessionConfigFromApi)(clonedSessionData.configuration) ?? undefined, () => this._ensureWorkspace(), clonedSessionData.created_at, clonedSessionData.is_active, clonedSessionData.uid);
     }
     async context(options) {
       const opts = options || {};
@@ -21664,9 +21716,12 @@ var require_peer = __commonJS((exports) => {
     get createdAt() {
       return this._createdAt;
     }
+    get uid() {
+      return this._uid;
+    }
     constructor(id, workspaceId, http, metadata, configuration, ensureWorkspace = async () => {
       return;
-    }, createdAt) {
+    }, createdAt, uid) {
       this.id = id;
       this.workspaceId = workspaceId;
       this._http = http;
@@ -21674,6 +21729,7 @@ var require_peer = __commonJS((exports) => {
       this._configuration = configuration;
       this._ensureWorkspace = ensureWorkspace;
       this._createdAt = createdAt;
+      this._uid = uid;
     }
     async _getOrCreate(params) {
       await this._ensureWorkspace();
@@ -21814,7 +21870,7 @@ var require_peer = __commonJS((exports) => {
           reverse
         });
       };
-      return new pagination_1.Page(sessionsPage, (session) => new session_1.Session(session.id, this.workspaceId, this._http, session.metadata ?? undefined, (0, validation_1.sessionConfigFromApi)(session.configuration) ?? undefined, () => this._ensureWorkspace(), session.created_at, session.is_active), fetchNextPage);
+      return new pagination_1.Page(sessionsPage, (session) => new session_1.Session(session.id, this.workspaceId, this._http, session.metadata ?? undefined, (0, validation_1.sessionConfigFromApi)(session.configuration) ?? undefined, () => this._ensureWorkspace(), session.created_at, session.is_active, session.uid), fetchNextPage);
     }
     message(content, options) {
       const validatedContent = validation_1.MessageContentSchema.parse(content);
@@ -21833,6 +21889,7 @@ var require_peer = __commonJS((exports) => {
       const peer = await this._getOrCreate({ id: this.id });
       this._metadata = peer.metadata || {};
       this._createdAt = peer.created_at;
+      this._uid = peer.uid;
       return this._metadata;
     }
     async setMetadata(metadata) {
@@ -21844,6 +21901,7 @@ var require_peer = __commonJS((exports) => {
       const peer = await this._getOrCreate({ id: this.id });
       this._configuration = (0, validation_1.peerConfigFromApi)(peer.configuration) || {};
       this._createdAt = peer.created_at;
+      this._uid = peer.uid;
       return this._configuration;
     }
     async setConfiguration(configuration) {
@@ -21856,6 +21914,7 @@ var require_peer = __commonJS((exports) => {
       this._metadata = peer.metadata || {};
       this._configuration = (0, validation_1.peerConfigFromApi)(peer.configuration) || {};
       this._createdAt = peer.created_at;
+      this._uid = peer.uid;
     }
     async search(query, options) {
       const validatedQuery = validation_1.SearchQuerySchema.parse(query);
@@ -21967,15 +22026,19 @@ var require_scope2 = __commonJS((exports) => {
     get createdAt() {
       return this._createdAt;
     }
+    get sessionCount() {
+      return this._sessionCount;
+    }
     constructor(id, workspaceId, http, metadata, ensureWorkspace = async () => {
       return;
-    }, createdAt) {
+    }, createdAt, sessionCount) {
       this.id = id;
       this.workspaceId = workspaceId;
       this._http = http;
       this._metadata = metadata;
       this._ensureWorkspace = ensureWorkspace;
       this._createdAt = createdAt;
+      this._sessionCount = sessionCount;
     }
     get _basePath() {
       return `/${api_version_1.API_VERSION}/workspaces/${this.workspaceId}/scopes/${this.id}`;
@@ -21983,6 +22046,12 @@ var require_scope2 = __commonJS((exports) => {
     async _addSessions(sessionIds) {
       await this._ensureWorkspace();
       await this._http.post(`${this._basePath}/sessions`, {
+        body: { session_ids: sessionIds }
+      });
+    }
+    async _removeSessions(sessionIds) {
+      await this._ensureWorkspace();
+      await this._http.post(`${this._basePath}/sessions/remove`, {
         body: { session_ids: sessionIds }
       });
     }
@@ -22008,6 +22077,10 @@ var require_scope2 = __commonJS((exports) => {
       const sessionIds = validation_1.ScopeSessionsSchema.parse(sessions.map(utils_1.resolveId));
       await this._addSessions(sessionIds);
     }
+    async removeSessions(sessions) {
+      const sessionIds = validation_1.ScopeSessionsSchema.parse(sessions.map(utils_1.resolveId));
+      await this._removeSessions(sessionIds);
+    }
     async removeSession(session) {
       await this._removeSession(validation_1.SessionIdSchema.parse((0, utils_1.resolveId)(session)));
     }
@@ -22021,7 +22094,7 @@ var require_scope2 = __commonJS((exports) => {
       const fetchNextPage = async (page, size) => {
         return this._listSessions({ page, size, reverse });
       };
-      return new pagination_1.Page(sessionsPage, (session) => new session_1.Session(session.id, this.workspaceId, this._http, session.metadata ?? undefined, (0, validation_1.sessionConfigFromApi)(session.configuration) ?? undefined, () => this._ensureWorkspace(), session.created_at, session.is_active), fetchNextPage);
+      return new pagination_1.Page(sessionsPage, (session) => new session_1.Session(session.id, this.workspaceId, this._http, session.metadata ?? undefined, (0, validation_1.sessionConfigFromApi)(session.configuration) ?? undefined, () => this._ensureWorkspace(), session.created_at, session.is_active, session.uid), fetchNextPage);
     }
     async status() {
       const response = await this._getStatus();
@@ -22067,6 +22140,9 @@ var require_client2 = __commonJS((exports) => {
     get configuration() {
       return this._configuration;
     }
+    get uid() {
+      return this._uid;
+    }
     get http() {
       return this._http;
     }
@@ -22095,13 +22171,15 @@ var require_client2 = __commonJS((exports) => {
       });
     }
     async _getOrCreateWorkspace(id, params) {
-      return this._http.post(`/${api_version_1.API_VERSION}/workspaces`, {
+      const workspace = await this._http.post(`/${api_version_1.API_VERSION}/workspaces`, {
         body: {
           id,
           metadata: params?.metadata,
           configuration: (0, validation_1.workspaceConfigToApi)(params?.configuration)
         }
       });
+      this._uid = workspace.uid;
+      return workspace;
     }
     async _ensureWorkspace() {
       if (!this._workspaceReady) {
@@ -22168,20 +22246,27 @@ var require_client2 = __commonJS((exports) => {
     }
     async _listScopes(workspaceId, params) {
       return this._http.post(`/${api_version_1.API_VERSION}/workspaces/${workspaceId}/scopes/list`, {
+        body: { filters: params?.filters },
         query: {
           page: params?.page,
           size: params?.size,
-          reverse: params?.reverse ? "true" : undefined
+          reverse: params?.reverse ? "true" : undefined,
+          include_session_count: params?.includeSessionCount ? "true" : undefined
         }
       });
     }
     async _listSessions(workspaceId, params) {
       return this._http.post(`/${api_version_1.API_VERSION}/workspaces/${workspaceId}/sessions/list`, {
-        body: { filters: params?.filters },
+        body: {
+          filters: params?.filters,
+          scope: params?.scope,
+          in_no_scope: params?.inNoScope ? true : undefined
+        },
         query: {
           page: params?.page,
           size: params?.size,
-          reverse: params?.reverse ? "true" : undefined
+          reverse: params?.reverse ? "true" : undefined,
+          include_scopes: params?.includeScopes ? "true" : undefined
         }
       });
     }
@@ -22219,7 +22304,7 @@ var require_client2 = __commonJS((exports) => {
         configuration: (0, validation_1.peerConfigToApi)(validatedConfiguration),
         metadata: validatedMetadata
       });
-      return new peer_1.Peer(validatedId, this.workspaceId, this._http, peerData.metadata ?? undefined, (0, validation_1.peerConfigFromApi)(peerData.configuration) ?? undefined, () => this._ensureWorkspace(), peerData.created_at);
+      return new peer_1.Peer(validatedId, this.workspaceId, this._http, peerData.metadata ?? undefined, (0, validation_1.peerConfigFromApi)(peerData.configuration) ?? undefined, () => this._ensureWorkspace(), peerData.created_at, peerData.uid);
     }
     async peers(options) {
       await this._ensureWorkspace();
@@ -22245,7 +22330,7 @@ var require_client2 = __commonJS((exports) => {
           reverse
         });
       };
-      return new pagination_1.Page(peersPage, (peer) => new peer_1.Peer(peer.id, this.workspaceId, this._http, peer.metadata ?? undefined, (0, validation_1.peerConfigFromApi)(peer.configuration) ?? undefined, () => this._ensureWorkspace(), peer.created_at), fetchNextPage);
+      return new pagination_1.Page(peersPage, (peer) => new peer_1.Peer(peer.id, this.workspaceId, this._http, peer.metadata ?? undefined, (0, validation_1.peerConfigFromApi)(peer.configuration) ?? undefined, () => this._ensureWorkspace(), peer.created_at, peer.uid), fetchNextPage);
     }
     async session(id, options) {
       await this._ensureWorkspace();
@@ -22261,7 +22346,7 @@ var require_client2 = __commonJS((exports) => {
         peers: validatedPeers,
         scopes: validatedScopes
       });
-      return new session_1.Session(validatedId, this.workspaceId, this._http, sessionData.metadata ?? undefined, (0, validation_1.sessionConfigFromApi)(sessionData.configuration) ?? undefined, () => this._ensureWorkspace(), sessionData.created_at, sessionData.is_active);
+      return new session_1.Session(validatedId, this.workspaceId, this._http, sessionData.metadata ?? undefined, (0, validation_1.sessionConfigFromApi)(sessionData.configuration) ?? undefined, () => this._ensureWorkspace(), sessionData.created_at, sessionData.is_active, sessionData.uid);
     }
     async scope(id, options) {
       await this._ensureWorkspace();
@@ -22280,16 +22365,20 @@ var require_client2 = __commonJS((exports) => {
     }
     async scopes(options) {
       await this._ensureWorkspace();
-      const reverse = options?.reverse;
+      const listOptions = {
+        filters: options?.filters ? validation_1.FilterSchema.parse(options.filters) : undefined,
+        reverse: options?.reverse,
+        includeSessionCount: options?.includeSessionCount
+      };
       const scopesPage = await this._listScopes(this.workspaceId, {
+        ...listOptions,
         page: options?.page,
-        size: options?.size,
-        reverse
+        size: options?.size
       });
       const fetchNextPage = async (page, size) => {
-        return this._listScopes(this.workspaceId, { page, size, reverse });
+        return this._listScopes(this.workspaceId, { ...listOptions, page, size });
       };
-      return new pagination_1.Page(scopesPage, (scope) => new scope_1.Scope(scope.id, this.workspaceId, this._http, scope.metadata ?? undefined, () => this._ensureWorkspace(), scope.created_at), fetchNextPage);
+      return new pagination_1.Page(scopesPage, (scope) => new scope_1.Scope(scope.id, this.workspaceId, this._http, scope.metadata ?? undefined, () => this._ensureWorkspace(), scope.created_at, scope.session_count), fetchNextPage);
     }
     async sessions(options) {
       await this._ensureWorkspace();
@@ -22297,25 +22386,32 @@ var require_client2 = __commonJS((exports) => {
         "filters",
         "page",
         "size",
-        "reverse"
+        "reverse",
+        "scope",
+        "inNoScope",
+        "includeScopes"
       ]);
       const validatedFilter = normalizedOptions.filters ? validation_1.FilterSchema.parse(normalizedOptions.filters) : undefined;
-      const reverse = normalizedOptions.reverse;
-      const sessionsPage = await this._listSessions(this.workspaceId, {
+      const listOptions = {
         filters: validatedFilter,
+        reverse: normalizedOptions.reverse,
+        scope: normalizedOptions.scope,
+        inNoScope: normalizedOptions.inNoScope,
+        includeScopes: normalizedOptions.includeScopes
+      };
+      const sessionsPage = await this._listSessions(this.workspaceId, {
+        ...listOptions,
         page: normalizedOptions.page,
-        size: normalizedOptions.size,
-        reverse
+        size: normalizedOptions.size
       });
       const fetchNextPage = async (page, size) => {
         return this._listSessions(this.workspaceId, {
-          filters: validatedFilter,
+          ...listOptions,
           page,
-          size,
-          reverse
+          size
         });
       };
-      return new pagination_1.Page(sessionsPage, (session) => new session_1.Session(session.id, this.workspaceId, this._http, session.metadata ?? undefined, (0, validation_1.sessionConfigFromApi)(session.configuration) ?? undefined, () => this._ensureWorkspace(), session.created_at, session.is_active), fetchNextPage);
+      return new pagination_1.Page(sessionsPage, (session) => new session_1.Session(session.id, this.workspaceId, this._http, session.metadata ?? undefined, (0, validation_1.sessionConfigFromApi)(session.configuration) ?? undefined, () => this._ensureWorkspace(), session.created_at, session.is_active, session.uid, session.scopes), fetchNextPage);
     }
     async getMetadata() {
       await this._ensureWorkspace();
@@ -22452,6 +22548,20 @@ var require_client2 = __commonJS((exports) => {
           dream_type: "omni"
         }
       });
+    }
+    async dreams(options) {
+      await this._ensureWorkspace();
+      const body = {};
+      if (options?.observed)
+        body.observed_id = (0, utils_1.resolveId)(options.observed);
+      if (options?.observer)
+        body.observer_id = (0, utils_1.resolveId)(options.observer);
+      const fetchPage = (page, size) => this._http.post(`/${api_version_1.API_VERSION}/workspaces/${this.workspaceId}/dreams/list`, { body, query: { page, size } });
+      return new pagination_1.Page(await fetchPage(options?.page, options?.size), undefined, fetchPage);
+    }
+    async getDream(runId) {
+      await this._ensureWorkspace();
+      return this._http.get(`/${api_version_1.API_VERSION}/workspaces/${this.workspaceId}/dreams/${runId}`);
     }
     toString() {
       return `Honcho(workspaceId='${this.workspaceId}', baseURL='${this._http.baseURL}')`;
@@ -28601,287 +28711,453 @@ class StdioServerTransport {
 }
 
 // src/mcp/server.ts
-var import_sdk = __toESM(require_dist2(), 1);
-import { readFileSync as readFileSync3 } from "fs";
+var import_sdk2 = __toESM(require_dist2(), 1);
+import { readFileSync as readFileSync4 } from "fs";
 
 // src/config.ts
-import { homedir as homedir2 } from "os";
-import { join as join3, basename, dirname, resolve, sep } from "path";
+import { join as join3, dirname as dirname2 } from "path";
 import { fileURLToPath } from "url";
-import { chmodSync, existsSync as existsSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync2, statSync, writeFileSync as writeFileSync2 } from "fs";
+import { existsSync as existsSync3, readFileSync as readFileSync3 } from "fs";
 
-// src/git.ts
-import { execSync } from "child_process";
-import { existsSync } from "fs";
-import { join } from "path";
-function isGitRepo(cwd) {
-  return existsSync(join(cwd, ".git"));
-}
-function gitCommand(cwd, args) {
-  try {
-    return execSync(`git ${args}`, { cwd, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }).trim();
-  } catch {
-    return null;
-  }
-}
-function captureGitState(cwd) {
-  if (!isGitRepo(cwd)) {
-    return null;
-  }
-  const branch = gitCommand(cwd, "rev-parse --abbrev-ref HEAD") || "unknown";
-  const commit = gitCommand(cwd, "rev-parse --short HEAD") || "unknown";
-  const commitMessage = gitCommand(cwd, "log -1 --format=%s") || "";
-  const statusOutput = gitCommand(cwd, "status --porcelain") || "";
-  const isDirty = statusOutput.length > 0;
-  const dirtyFiles = isDirty ? statusOutput.split(`
-`).filter((line) => line.trim()).map((line) => line.slice(3).trim()).slice(0, 20) : [];
+// node_modules/@honcho-ai/harness-plugin-core/dist/config.js
+import { existsSync as existsSync2, readFileSync as readFileSync2 } from "node:fs";
+import { homedir } from "node:os";
+import { join as join2 } from "node:path";
+
+// node_modules/@honcho-ai/harness-plugin-core/dist/legacy/v01.js
+var isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+var str = (v) => typeof v === "string" && v ? v : undefined;
+function v01Reader(file, host) {
+  const hosts = isObj(file.hosts) ? file.hosts : {};
+  const v1 = typeof file.schemaVersion === "number" && file.schemaVersion >= 1;
+  const pick2 = (b) => {
+    const o = isObj(b) ? b : {};
+    if (v1)
+      return { apiKey: isObj(o.auth) ? str(o.auth.apiKey) : undefined, peerName: str(o.peerName), workspace: str(o.workspace), baseUrl: str(o.baseUrl) };
+    return {
+      apiKey: (isObj(o.auth) ? str(o.auth.apiKey) : undefined) ?? str(o.apiKey),
+      peerName: str(o.peerName),
+      workspace: str(o.workspace) ?? str(o.workspaceId),
+      baseUrl: str(o.baseUrl) ?? str(o.environmentUrl) ?? (isObj(o.endpoint) ? str(o.endpoint.baseUrl) : undefined)
+    };
+  };
+  const own = pick2(hosts[host]);
+  const top = pick2(file);
   return {
-    branch,
-    commit,
-    commitMessage,
-    isDirty,
-    dirtyFiles,
-    timestamp: new Date().toISOString()
+    apiKey: own.apiKey ?? top.apiKey,
+    peerName: own.peerName ?? top.peerName,
+    workspace: own.workspace ?? top.workspace,
+    aiPeer: isObj(hosts[host]) ? str(hosts[host].aiPeer) : undefined,
+    baseUrl: own.baseUrl ?? top.baseUrl
   };
 }
 
-// src/cache.ts
-import { homedir } from "os";
-import { join as join2 } from "path";
-import { existsSync as existsSync2, readFileSync, writeFileSync, mkdirSync } from "fs";
-var CACHE_DIR = join2(homedir(), ".honcho");
-var ID_CACHE_FILE = join2(CACHE_DIR, "cache.json");
-var CONTEXT_CACHE_FILE = join2(CACHE_DIR, "context-cache.json");
-function ensureCacheDir() {
-  if (!existsSync2(CACHE_DIR)) {
-    mkdirSync(CACHE_DIR, { recursive: true });
+// node_modules/@honcho-ai/harness-plugin-core/dist/oauth.js
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+var OAUTH_TOKEN_URL = "https://api.honcho.dev/oauth/token";
+var OAUTH_SCOPE = "write";
+var REQUEST_TIMEOUT_MS = 1e4;
+var REFRESH_SKEW_S = 60;
+var LOCK_STALE_MS = REQUEST_TIMEOUT_MS + 5000;
+var LOCK_WAIT_MS = LOCK_STALE_MS + 5000;
+var PERMANENT_ERRORS = new Set(["invalid_grant", "invalid_client", "unauthorized_client"]);
+
+class OAuthError extends Error {
+  code;
+  constructor(code, description) {
+    super(description || code);
+    this.code = code;
+    this.name = "OAuthError";
   }
 }
-function loadIdCache() {
-  ensureCacheDir();
-  if (!existsSync2(ID_CACHE_FILE)) {
-    return {};
-  }
+function isCloud(baseUrl) {
+  return normalizeBaseUrl(baseUrl || DEFAULT_BASE_URL) === DEFAULT_BASE_URL;
+}
+function accessValid(t, skewS = REFRESH_SKEW_S, nowS = Date.now() / 1000) {
+  return !!t?.accessToken && nowS < t.accessExpiresAt - skewS;
+}
+async function post(url, form, t) {
+  const f = t?.fetch ?? fetch;
+  let res;
   try {
-    return JSON.parse(readFileSync(ID_CACHE_FILE, "utf-8"));
-  } catch {
-    return {};
+    res = await f(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+      body: new URLSearchParams(form).toString(),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+    });
+  } catch (e) {
+    throw new OAuthError("connection_error", `could not reach ${url}: ${e.message}`);
   }
-}
-function saveIdCache(cache) {
-  ensureCacheDir();
-  writeFileSync(ID_CACHE_FILE, JSON.stringify(cache, null, 2));
-}
-function setCachedSessionId(cwd, name, id, instanceId) {
-  const cache = loadIdCache();
-  if (!cache.sessions)
-    cache.sessions = {};
-  cache.sessions[cwd] = { name, id, updatedAt: new Date().toISOString(), instanceId };
-  saveIdCache(cache);
-}
-function isScopeMember(workspace, scope, session) {
-  return loadIdCache().scopeMembers?.[`${workspace}/${scope}`]?.includes(session) ?? false;
-}
-function setScopeMember(workspace, scope, session) {
-  const cache = loadIdCache();
-  const key = `${workspace}/${scope}`;
-  cache.scopeMembers = { ...cache.scopeMembers, [key]: [...cache.scopeMembers?.[key] ?? [], session] };
-  saveIdCache(cache);
-}
-function getLastActiveCwd() {
-  const cache = loadIdCache();
-  if (!cache.sessions)
-    return null;
-  let latest = null;
-  for (const [cwd, entry] of Object.entries(cache.sessions)) {
-    if (!latest || entry.updatedAt > latest.updatedAt) {
-      latest = { cwd, updatedAt: entry.updatedAt };
-    }
-  }
-  return latest?.cwd || null;
-}
-function getClaudeInstanceId() {
-  const cache = loadIdCache();
-  return cache.claudeInstanceId || null;
-}
-function setClaudeInstanceId(instanceId) {
-  const cache = loadIdCache();
-  cache.claudeInstanceId = instanceId;
-  saveIdCache(cache);
-}
-function getInstanceIdForCwd(cwd) {
-  const cache = loadIdCache();
-  return cache.sessions?.[cwd]?.instanceId ?? null;
-}
-var CONTEXT_CACHE_KNOWN_KEYS = new Set([
-  "claudeContext",
-  "summaries",
-  "messageCount"
-]);
-function loadContextCache() {
-  ensureCacheDir();
-  if (!existsSync2(CONTEXT_CACHE_FILE)) {
-    return {};
-  }
+  let body = null;
   try {
-    const raw = JSON.parse(readFileSync(CONTEXT_CACHE_FILE, "utf-8"));
-    let cleaned = false;
-    for (const key of Object.keys(raw)) {
-      if (!CONTEXT_CACHE_KNOWN_KEYS.has(key)) {
-        delete raw[key];
-        cleaned = true;
-      }
-    }
-    if (cleaned) {
-      writeFileSync(CONTEXT_CACHE_FILE, JSON.stringify(raw, null, 2));
-    }
-    return raw;
+    body = await res.json();
   } catch {
-    return {};
+    body = null;
   }
+  return { status: res.status, body };
 }
-function saveContextCache(cache) {
-  ensureCacheDir();
-  writeFileSync(CONTEXT_CACHE_FILE, JSON.stringify(cache, null, 2));
+function errorOf(r) {
+  const b = r.body;
+  if (b && typeof b === "object" && typeof b.error === "string")
+    return new OAuthError(b.error, b.error_description);
+  return new OAuthError("invalid_response");
 }
-function incrementMessageCount() {
-  const cache = loadContextCache();
-  cache.messageCount = (cache.messageCount || 0) + 1;
-  saveContextCache(cache);
-  return cache.messageCount;
-}
-function getMessageCount() {
-  const cache = loadContextCache();
-  return cache.messageCount || 0;
-}
-function resetMessageCount() {
-  const cache = loadContextCache();
-  cache.messageCount = 0;
-  saveContextCache(cache);
-}
-var GIT_STATE_FILE = join2(CACHE_DIR, "git-state.json");
-function loadGitStateCache() {
-  ensureCacheDir();
-  if (!existsSync2(GIT_STATE_FILE)) {
-    return {};
+function tokensFrom(body, clientId, prev) {
+  if (!body || typeof body.access_token !== "string" || !Number.isFinite(Number(body.expires_in))) {
+    throw new OAuthError("invalid_response", "malformed token response");
   }
+  return {
+    accessToken: body.access_token,
+    refreshToken: body.refresh_token || prev?.refreshToken || "",
+    accessExpiresAt: Math.floor(Date.now() / 1000) + Number(body.expires_in),
+    clientId,
+    scope: body.scope || prev?.scope || OAUTH_SCOPE
+  };
+}
+async function refreshAccessToken(prev, opts = {}) {
+  const r = await post(opts.tokenUrl ?? OAUTH_TOKEN_URL, { grant_type: "refresh_token", refresh_token: prev.refreshToken, client_id: prev.clientId }, opts);
+  if (r.status !== 200)
+    throw errorOf(r);
+  return tokensFrom(r.body, prev.clientId, prev);
+}
+function isObj2(v) {
+  return v !== null && typeof v === "object" && !Array.isArray(v);
+}
+function asTokens(v) {
+  if (!isObj2(v) || typeof v.accessToken !== "string" || !v.accessToken)
+    return;
+  return {
+    accessToken: v.accessToken,
+    refreshToken: typeof v.refreshToken === "string" ? v.refreshToken : "",
+    accessExpiresAt: Number(v.accessExpiresAt) || 0,
+    clientId: typeof v.clientId === "string" ? v.clientId : "",
+    scope: typeof v.scope === "string" ? v.scope : ""
+  };
+}
+function readFile(path) {
+  if (!existsSync(path))
+    return {};
+  const parsed = JSON.parse(readFileSync(path, "utf-8"));
+  return isObj2(parsed) ? parsed : {};
+}
+function readGrant(file, host, legacy) {
+  return asTokens(effectiveBlock(file, host, legacy).oauth);
+}
+function holderAlive(token, ageMs) {
+  if (token === "")
+    return ageMs < 1000;
+  const pid = Number(token.split(":")[0]);
+  if (!Number.isInteger(pid) || pid <= 0)
+    return true;
   try {
-    return JSON.parse(readFileSync(GIT_STATE_FILE, "utf-8"));
-  } catch {
-    return {};
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return e.code === "EPERM";
   }
 }
-function saveGitStateCache(cache) {
-  ensureCacheDir();
-  writeFileSync(GIT_STATE_FILE, JSON.stringify(cache, null, 2));
-}
-function getCachedGitState(cwd) {
-  const cache = loadGitStateCache();
-  return cache[cwd] || null;
-}
-function setCachedGitState(cwd, state) {
-  const cache = loadGitStateCache();
-  cache[cwd] = state;
-  saveGitStateCache(cache);
-}
-function detectGitChanges(previous, current) {
-  const changes = [];
-  if (!previous) {
-    changes.push({
-      type: "initial",
-      description: `Session started on branch '${current.branch}' at ${current.commit}`
-    });
-    return changes;
-  }
-  if (previous.branch !== current.branch) {
-    changes.push({
-      type: "branch_switch",
-      description: `Branch switched from '${previous.branch}' to '${current.branch}'`,
-      from: previous.branch,
-      to: current.branch
-    });
-  }
-  if (previous.commit !== current.commit) {
-    changes.push({
-      type: "new_commits",
-      description: `New commit: ${current.commit} - ${current.commitMessage}`,
-      from: previous.commit,
-      to: current.commit
-    });
-  }
-  if (!previous.isDirty && current.isDirty) {
-    changes.push({
-      type: "files_changed",
-      description: `Uncommitted changes detected: ${current.dirtyFiles.slice(0, 5).join(", ")}${current.dirtyFiles.length > 5 ? "..." : ""}`
-    });
-  }
-  return changes;
-}
-var MAX_MESSAGE_SIZE = 24000;
-function chunkContent(content, maxSize = MAX_MESSAGE_SIZE) {
-  if (content.length <= maxSize) {
-    return [content];
-  }
-  const chunks = [];
-  let remaining = content;
-  while (remaining.length > 0) {
-    if (remaining.length <= maxSize) {
-      chunks.push(remaining);
-      break;
-    }
-    let splitIndex = remaining.lastIndexOf(`
-`, maxSize);
-    if (splitIndex <= 0 || splitIndex < maxSize * 0.25) {
-      splitIndex = remaining.lastIndexOf(" ", maxSize);
-    }
-    if (splitIndex <= 0 || splitIndex < maxSize * 0.25) {
-      splitIndex = maxSize;
-    }
-    chunks.push(remaining.slice(0, splitIndex));
-    remaining = remaining.slice(splitIndex).trimStart();
-  }
-  if (chunks.length > 1) {
-    return chunks.map((chunk, i) => `[Part ${i + 1}/${chunks.length}] ${chunk}`);
-  }
-  return chunks;
-}
-var HONCHO_MAX_BATCH = 100;
-async function addMessagesBatched(session, messages, resolveFallback) {
-  let active = session;
-  let usedFallback = false;
-  for (let i = 0;i < messages.length; i += HONCHO_MAX_BATCH) {
-    const batch = messages.slice(i, i + HONCHO_MAX_BATCH);
+async function withConfigLock(path, fn) {
+  const lock = `${path}.lock`;
+  mkdirSync(dirname(path), { recursive: true });
+  const start = Date.now();
+  let fd;
+  while (fd === undefined) {
     try {
-      await active.addMessages(batch);
+      fd = openSync(lock, "wx", 384);
     } catch (e) {
-      if (usedFallback || !resolveFallback)
+      if (e.code !== "EEXIST")
         throw e;
-      active = await resolveFallback(e);
-      usedFallback = true;
-      await active.addMessages(batch);
+      try {
+        const age = Date.now() - statSync(lock).mtimeMs;
+        if (age > LOCK_STALE_MS || !holderAlive(readFileSync(lock, "utf-8"), age))
+          unlinkSync(lock);
+      } catch {}
+      if (Date.now() - start > LOCK_WAIT_MS)
+        throw new Error(`timed out waiting for ${lock}`);
+      await new Promise((r) => setTimeout(r, 50 + Math.random() * 50));
     }
   }
+  const token = `${process.pid}:${Math.random().toString(36).slice(2)}`;
+  try {
+    writeFileSync(fd, token);
+    return await fn();
+  } finally {
+    closeSync(fd);
+    try {
+      if (readFileSync(lock, "utf-8") === token)
+        unlinkSync(lock);
+    } catch {}
+  }
 }
-function clearIdCache() {
-  ensureCacheDir();
-  writeFileSync(ID_CACHE_FILE, "{}");
+function writeFileAtomic(path, data) {
+  const tmp = join(dirname(path), `.${Date.now()}-${process.pid}-${Math.random().toString(36).slice(2)}.tmp`);
+  writeFileSync(tmp, JSON.stringify(data, null, 2) + `
+`, { mode: 384 });
+  renameSync(tmp, path);
 }
-function clearPeerCache() {
-  const cache = loadIdCache();
-  delete cache.peers;
-  saveIdCache(cache);
+async function updateConfigFile(path, mutate) {
+  await withConfigLock(path, async () => {
+    const file = readFile(path);
+    mutate(file);
+    writeFileAtomic(path, file);
+  });
 }
-function clearUserContextOnly() {
-  const cache = loadContextCache();
-  delete cache.userContext;
-  saveContextCache(cache);
+function setGrant(file, host, tokens) {
+  const block = hostBlock(file, host);
+  if (tokens)
+    block.oauth = tokens;
+  else
+    delete block.oauth;
 }
-function clearClaudeContextOnly() {
-  const cache = loadContextCache();
-  delete cache.claudeContext;
-  saveContextCache(cache);
+function serverOf(block, baseUrl, env) {
+  return baseUrl ?? (env.HONCHO_BASE_URL || undefined) ?? (typeof block.baseUrl === "string" && block.baseUrl ? block.baseUrl : undefined);
 }
-// node_modules/@honcho-ai/harness-plugin-core/src/telemetry.ts
+function pickCredential(file, opts) {
+  const env = opts.env ?? process.env;
+  if (env.HONCHO_API_KEY)
+    return { token: env.HONCHO_API_KEY, source: "env" };
+  const block = effectiveBlock(file, opts.host, opts.legacy);
+  const g = isCloud(serverOf(block, opts.baseUrl, env)) ? asTokens(block.oauth) : undefined;
+  if (g)
+    return { token: g.accessToken, source: "oauth", expiresAt: g.accessExpiresAt, ...accessValid(g, 0) ? {} : { expired: true } };
+  return typeof block.apiKey === "string" && block.apiKey ? { token: block.apiKey, source: "apiKey" } : null;
+}
+async function ensureFreshCredential(opts) {
+  const env = opts.env ?? process.env;
+  if (env.HONCHO_API_KEY)
+    return { token: env.HONCHO_API_KEY, source: "env" };
+  let file;
+  try {
+    file = readFile(opts.path);
+  } catch {
+    file = {};
+  }
+  const block = effectiveBlock(file, opts.host, opts.legacy);
+  const g = isCloud(serverOf(block, opts.baseUrl, env)) ? asTokens(block.oauth) : undefined;
+  if (!g || accessValid(g) || !g.refreshToken)
+    return pickCredential(file, opts);
+  let error2;
+  try {
+    await withConfigLock(opts.path, async () => {
+      const current = readGrant(readFile(opts.path), opts.host, opts.legacy);
+      if (!current || accessValid(current))
+        return;
+      const next = await refreshAccessToken(current, opts);
+      const latest = readFile(opts.path);
+      setGrant(latest, opts.host, next);
+      writeFileAtomic(opts.path, latest);
+    });
+  } catch (e) {
+    error2 = e instanceof OAuthError ? e.code : e.message;
+  }
+  try {
+    file = readFile(opts.path);
+  } catch {}
+  const cred = pickCredential(file, opts);
+  if (cred && error2) {
+    cred.error = error2;
+    if (PERMANENT_ERRORS.has(error2))
+      cred.reauthRequired = true;
+  }
+  return cred;
+}
+
+// node_modules/@honcho-ai/harness-plugin-core/dist/config.js
+var DEFAULT_BASE_URL = "https://api.honcho.dev";
+var CONFIG_SCHEMA_VERSION = 2;
+function isObj3(v) {
+  return v !== null && typeof v === "object" && !Array.isArray(v);
+}
+function str2(v) {
+  return typeof v === "string" && v ? v : undefined;
+}
+function normalizeBaseUrl(input) {
+  let s = input.trim();
+  if (!s)
+    return s;
+  if (!s.startsWith("http://") && !s.startsWith("https://")) {
+    const host = s.split("/")[0].split(":")[0].toLowerCase();
+    const local = host === "localhost" || host === "127.0.0.1" || host === "::1";
+    s = `${local ? "http" : "https"}://${s}`;
+  }
+  try {
+    const u = new URL(s);
+    u.hostname = u.hostname.toLowerCase();
+    const path = u.pathname === "/" ? "" : u.pathname.replace(/\/+$/, "");
+    return `${u.protocol}//${u.host}${path}`;
+  } catch {
+    return s;
+  }
+}
+function resolveConfig(file, opts) {
+  const env = opts.env ?? process.env;
+  const { host } = opts;
+  const block = effectiveBlock(file, host, opts.legacy);
+  return {
+    host,
+    peerName: str2(env.HONCHO_PEER_NAME) ?? str2(block.peerName) ?? str2(env.USER) ?? str2(env.USERNAME) ?? "user",
+    workspace: str2(env.HONCHO_WORKSPACE) ?? str2(block.workspace) ?? opts.defaults?.workspace ?? host,
+    aiPeer: str2(env.HONCHO_AI_PEER) ?? str2(block.aiPeer) ?? opts.defaults?.aiPeer ?? host,
+    baseUrl: normalizeBaseUrl(str2(env.HONCHO_BASE_URL) ?? str2(block.baseUrl) ?? DEFAULT_BASE_URL),
+    warnings: checkConfig(file).map((i) => i.message)
+  };
+}
+function configPath(env = process.env) {
+  if (env.HONCHO_CONFIG_PATH)
+    return env.HONCHO_CONFIG_PATH;
+  const home = env.HOME || env.USERPROFILE || homedir();
+  return join2(home, ".honcho", "config.json");
+}
+function readConfigFile(env = process.env) {
+  const path = configPath(env);
+  if (!existsSync2(path))
+    return {};
+  try {
+    const parsed = JSON.parse(readFileSync2(path, "utf-8"));
+    return isObj3(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+async function saveHost(path, host, patch, legacy) {
+  await updateConfigFile(path, (file) => {
+    if (isNewer(file))
+      throw new Error(`${path} was written by a newer Honcho plugin; update this one.`);
+    const block = writeBlock(file, host, hostMigration(file, host, [], legacy));
+    if ("baseUrl" in patch && !("apiKey" in patch) && !sameServer(patch.baseUrl, str2(block.baseUrl)))
+      delete block.apiKey;
+    for (const [k, v] of Object.entries(patch)) {
+      if (v === undefined)
+        delete block[k];
+      else
+        block[k] = v;
+    }
+    block.schemaVersion = CONFIG_SCHEMA_VERSION;
+  });
+}
+var MOVABLE = ["apiKey", "peerName", "workspace", "aiPeer", "baseUrl"];
+function isNewer(file) {
+  return isObj3(file) && typeof file.schemaVersion === "number" && file.schemaVersion > CONFIG_SCHEMA_VERSION;
+}
+function isMigrated(block) {
+  return isObj3(block) && typeof block.schemaVersion === "number" && block.schemaVersion >= CONFIG_SCHEMA_VERSION;
+}
+function sameServer(a, b) {
+  return normalizeBaseUrl(a ?? DEFAULT_BASE_URL) === normalizeBaseUrl(b ?? DEFAULT_BASE_URL);
+}
+var LEGACY_HOST_KEYS = ["auth", "endpoint", "environmentUrl", "workspaceId"];
+function isGrant(v) {
+  return isObj3(v) && typeof v.accessToken === "string" && v.accessToken !== "";
+}
+function legacyGrantOf(b) {
+  return !isGrant(b.oauth) && isObj3(b.auth) && isObj3(b.auth.oauth) ? b.auth.oauth : undefined;
+}
+function checkConfig(file) {
+  if (!isObj3(file))
+    return [];
+  if (isNewer(file)) {
+    return [{ path: "schemaVersion", message: `This file is schema version ${file.schemaVersion}, newer than this plugin understands; update the plugin.` }];
+  }
+  const issues = [];
+  const hosts = isObj3(file.hosts) ? file.hosts : {};
+  const byWorkspace = new Map;
+  for (const h of Object.keys(hosts).filter((k) => isObj3(hosts[k]))) {
+    const block = hosts[h];
+    const peer = str2(block.peerName);
+    if (!peer)
+      continue;
+    const ws = str2(block.workspace) ?? h;
+    const peers = byWorkspace.get(ws) ?? new Map;
+    peers.set(peer, [...peers.get(peer) ?? [], h]);
+    byWorkspace.set(ws, peers);
+  }
+  for (const [ws, peers] of byWorkspace) {
+    if (peers.size < 2)
+      continue;
+    const list = [...peers].map(([p, hs]) => `${hs.join(", ")}: "${p}"`).join("; ");
+    issues.push({ path: "hosts", message: `Hosts in workspace "${ws}" use different peerNames (${list}), so the user is split across peers.` });
+  }
+  return issues;
+}
+function hostMigration(file, host, deadKeys = [], legacy = v01Reader) {
+  if (isNewer(file))
+    return { set: {}, remove: [] };
+  const f = isObj3(file) ? file : {};
+  const hosts = isObj3(f.hosts) ? f.hosts : {};
+  const block = isObj3(hosts[host]) ? hosts[host] : {};
+  const set2 = {};
+  const drop = [];
+  const grant = legacyGrantOf(block);
+  if (grant)
+    set2.oauth = grant;
+  if (!isMigrated(block)) {
+    const old = { ...legacy(f, host) };
+    const signedIn = isGrant(block.oauth) || grant !== undefined;
+    if (old.baseUrl && sameServer(old.baseUrl, undefined))
+      old.baseUrl = undefined;
+    for (const key of MOVABLE) {
+      if (signedIn && (key === "apiKey" || key === "baseUrl"))
+        continue;
+      if (old[key] !== undefined && block[key] !== old[key])
+        set2[key] = old[key];
+      else if (old[key] === undefined && block[key] !== undefined)
+        drop.push(key);
+    }
+    set2.schemaVersion = CONFIG_SCHEMA_VERSION;
+  }
+  const remove = [...drop, ...LEGACY_HOST_KEYS, ...deadKeys].filter((k) => (k in block) && !(k in set2));
+  return { set: set2, remove };
+}
+function effectiveBlock(file, host, legacy) {
+  return writeBlock(structuredClone(isObj3(file) ? file : {}), host, hostMigration(file, host, [], legacy));
+}
+function hostBlock(file, host) {
+  if (host === "__proto__" || host === "constructor" || host === "prototype")
+    throw new Error(`invalid host name: ${host}`);
+  if (!isObj3(file.hosts))
+    file.hosts = {};
+  return isObj3(file.hosts[host]) ? file.hosts[host] : file.hosts[host] = {};
+}
+function writeBlock(file, host, { set: set2, remove }) {
+  const block = hostBlock(file, host);
+  Object.assign(block, set2);
+  for (const k of remove)
+    delete block[k];
+  return block;
+}
+async function migrateHost(path, host, deadKeys = [], legacy) {
+  const peek = hostMigration(readConfigFile({ HONCHO_CONFIG_PATH: path }), host, deadKeys, legacy);
+  if (!Object.keys(peek.set).length && !peek.remove.length)
+    return [];
+  let changed = [];
+  await updateConfigFile(path, (file) => {
+    const m = hostMigration(file, host, deadKeys, legacy);
+    changed = [...Object.keys(m.set).filter((k) => k !== "schemaVersion"), ...m.remove.map((k) => `-${k}`)];
+    if (Object.keys(m.set).length || m.remove.length)
+      writeBlock(file, host, m);
+  });
+  return changed;
+}
+// node_modules/@honcho-ai/harness-plugin-core/dist/legacy/claude-honcho.js
+var isObj4 = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+var str3 = (v) => typeof v === "string" && v ? v : undefined;
+function claudeHonchoReader(file, host) {
+  const hosts = isObj4(file.hosts) ? file.hosts : {};
+  const found = hosts[host] ?? hosts[host.replace(/_/g, "-")] ?? hosts[host.replace(/-/g, "_")];
+  const block = isObj4(found) ? found : undefined;
+  const endpoint = block?.endpoint ?? file.endpoint;
+  const override = file.globalOverride === true;
+  return {
+    apiKey: str3(block?.apiKey) ?? str3(file.apiKey),
+    baseUrl: str3(endpoint?.baseUrl)?.replace(/\/v3\/?$/, "") ?? (endpoint?.environment === "local" ? "http://localhost:8000" : undefined),
+    peerName: str3(file.peerName),
+    workspace: str3(override || !block ? file.workspace : block.workspace),
+    aiPeer: str3(override ? file.aiPeer ?? block?.aiPeer : block ? block.aiPeer : file[host === "cursor" ? "cursorPeer" : "claudePeer"])
+  };
+}
+// node_modules/@honcho-ai/harness-plugin-core/dist/telemetry.js
 var HEADER_HOST = "X-Honcho-Host";
 var HEADER_PLUGIN = "X-Honcho-Plugin";
 var HEADER_AGENT_MODEL = "X-Honcho-Agent-Model";
@@ -28930,43 +29206,10 @@ function telemetryHeaders(id = {}, extra) {
   return headers;
 }
 // src/config.ts
+var LEGACY = claudeHonchoReader;
 function sanitizeForSessionName(s) {
   return s.toLowerCase().replace(/[^a-z0-9-_]/g, "-");
 }
-var SESSION_START_COMPONENTS = ["directives", "summary", "peerCard", "peerRepresentation", "briefing"];
-var PER_TURN_COMPONENTS = ["userContext", "assistantContext", "sessionContext", "dialectic"];
-function normalizePerTurn(components) {
-  return components.map((c) => c === "context" ? "userContext" : c);
-}
-function scopeForSession(injection, sessionName) {
-  return Object.entries(injection.scopes ?? {}).find(([, sessions]) => sessions.includes(sessionName))?.[0];
-}
-function recallBoundary(injection, sessionName) {
-  if ((injection.recallScope ?? "peer") === "peer")
-    return {};
-  const scope = injection.recallScope === "scope" ? scopeForSession(injection, sessionName) : undefined;
-  return scope ? { scope } : { session: sessionName };
-}
-var DEFAULT_INJECTION = {
-  sessionStart: ["directives", "summary", "peerCard"],
-  perTurn: ["userContext"],
-  showContents: [],
-  searchTopK: 10,
-  maxConclusions: 15,
-  searchMaxDistance: 0.6,
-  searchQuerySource: "prompt",
-  sessionContextTokens: 1500,
-  dialecticTemplate: "Return a compact, factual list of anything from the user's history — preferences, prior decisions, relevant past work — that would help with the following. Write in the third person as background notes; do not address the user, ask questions, or offer next steps. If nothing relevant exists, say so in one line. Relevant to: %{user_query}",
-  dialecticReasoning: "medium",
-  recallScope: "peer",
-  scopes: {},
-  recall: null
-};
-var REASONING_LEVELS = ["minimal", "low", "medium", "high", "max"];
-var HONCHO_BASE_URLS = {
-  production: "https://api.honcho.dev/v3",
-  local: "http://localhost:8000/v3"
-};
 var _detectedHost = null;
 function setDetectedHost(host) {
   _detectedHost = host;
@@ -28994,13 +29237,6 @@ var DEFAULT_AI_PEER = {
   claude_code: "claude",
   obsidian: "honcho"
 };
-function coerceBoolean(value) {
-  if (typeof value === "string") {
-    const v = value.trim().toLowerCase();
-    return v !== "false" && v !== "0" && v !== "";
-  }
-  return Boolean(value);
-}
 var _stdinText = null;
 function cacheStdin(text) {
   _stdinText = text;
@@ -29027,31 +29263,14 @@ async function initHook() {
     process.exit(0);
   setDetectedHost(detectHost(input));
 }
-function deepEqual(a, b) {
-  if (a === b)
-    return true;
-  if (a == null || b == null)
-    return a === b;
-  if (typeof a !== typeof b)
-    return false;
-  if (typeof a !== "object")
-    return false;
-  const aObj = a;
-  const bObj = b;
-  const keys = new Set([...Object.keys(aObj), ...Object.keys(bObj)]);
-  for (const key of keys) {
-    if (!deepEqual(aObj[key], bObj[key]))
-      return false;
-  }
-  return true;
-}
-var CONFIG_DIR = join3(homedir2(), ".honcho");
-var CONFIG_FILE = join3(CONFIG_DIR, "config.json");
 function getConfigPath() {
-  return CONFIG_FILE;
+  return configPath();
+}
+function getConfigDir() {
+  return dirname2(configPath());
 }
 function configExists() {
-  return existsSync3(CONFIG_FILE);
+  return existsSync3(configPath());
 }
 function getPluginVersion() {
   const root = process.env.CLAUDE_PLUGIN_ROOT;
@@ -29061,339 +29280,146 @@ function getPluginVersion() {
   ];
   for (const manifest of candidates) {
     try {
-      const version2 = JSON.parse(readFileSync2(manifest, "utf-8")).version;
+      const version2 = JSON.parse(readFileSync3(manifest, "utf-8")).version;
       if (typeof version2 === "string" && version2)
         return version2;
     } catch {}
   }
   return "unknown";
 }
-function loadConfig2(host) {
-  const resolvedHost = host ?? getDetectedHost();
-  if (configExists()) {
-    try {
-      const content = readFileSync2(CONFIG_FILE, "utf-8");
-      const raw = JSON.parse(content);
-      return resolveConfig2(raw, resolvedHost);
-    } catch {}
-  }
-  return loadConfigFromEnv(resolvedHost);
+function legacyEndpoint(value) {
+  if (value === "local")
+    return "http://localhost:8000";
+  if (value?.startsWith("http"))
+    return value.replace(/\/v3\/?$/, "");
+  return;
 }
-function resolveConfig2(raw, host) {
-  const hostBlock = raw.hosts?.[host] ?? raw.hosts?.[host.replace(/_/g, "-")] ?? raw.hosts?.[host.replace(/-/g, "_")];
-  const apiKey = process.env.HONCHO_API_KEY || hostBlock?.apiKey || raw.apiKey;
-  if (!apiKey)
-    return null;
-  const peerName = raw.peerName || process.env.HONCHO_PEER_NAME || process.env.USER || process.env.USERNAME || "user";
-  let workspace;
-  let aiPeer;
-  if (raw.globalOverride === true) {
-    workspace = raw.workspace ?? DEFAULT_WORKSPACE[host];
-    aiPeer = raw.aiPeer ?? hostBlock?.aiPeer ?? DEFAULT_AI_PEER[host];
-  } else if (hostBlock) {
-    workspace = hostBlock.workspace ?? DEFAULT_WORKSPACE[host];
-    aiPeer = hostBlock.aiPeer ?? DEFAULT_AI_PEER[host];
-  } else {
-    workspace = process.env.HONCHO_WORKSPACE ?? raw.workspace ?? DEFAULT_WORKSPACE[host];
-    if (host === "cursor") {
-      aiPeer = raw.cursorPeer ?? DEFAULT_AI_PEER["cursor"];
-    } else {
-      aiPeer = raw.claudePeer ?? DEFAULT_AI_PEER["claude_code"];
-    }
-  }
-  const config2 = {
-    apiKey,
-    peerName,
-    workspace,
-    aiPeer,
-    sessionStrategy: hostBlock?.sessionStrategy ?? raw.sessionStrategy,
-    sessionPeerPrefix: hostBlock?.sessionPeerPrefix ?? raw.sessionPeerPrefix,
-    sessions: raw.sessions,
-    saveMessages: hostBlock?.saveMessages ?? raw.saveMessages,
-    saveToolUse: hostBlock?.saveToolUse ?? raw.saveToolUse,
-    saveGitEvents: hostBlock?.saveGitEvents ?? raw.saveGitEvents,
-    reasoningLevel: hostBlock?.reasoningLevel ?? raw.reasoningLevel,
-    observationMode: hostBlock?.observationMode ?? raw.observationMode,
-    messageUpload: hostBlock?.messageUpload ?? raw.messageUpload,
-    contextRefresh: hostBlock?.contextRefresh ?? raw.contextRefresh,
-    endpoint: hostBlock?.endpoint ?? raw.endpoint,
-    redactPatterns: hostBlock?.redactPatterns ?? raw.redactPatterns,
-    injection: hostBlock?.injection ?? raw.injection,
-    rememberTool: hostBlock?.rememberTool ?? raw.rememberTool,
-    enabled: hostBlock?.enabled ?? raw.enabled,
-    logging: hostBlock?.logging ?? raw.logging,
-    globalOverride: raw.globalOverride
-  };
-  return mergeWithEnvVars(config2);
+function legacyEnv(host = getDetectedHost()) {
+  const env = process.env;
+  const peerVar = host === "cursor" ? "HONCHO_CURSOR_PEER" : "HONCHO_CLAUDE_PEER";
+  const candidates = [
+    ["HONCHO_BASE_URL", "baseUrl", "HONCHO_ENDPOINT", legacyEndpoint(env.HONCHO_ENDPOINT)],
+    ["HONCHO_AI_PEER", "aiPeer", peerVar, env[peerVar] || undefined]
+  ];
+  const set2 = candidates.filter(([newVar, , , value]) => value && !env[newVar]);
+  if (!set2.length)
+    return {};
+  const block = effectiveBlock(readConfigFile(), host, LEGACY);
+  if (block.apiKey || block.oauth)
+    return {};
+  return Object.fromEntries(set2.filter(([, setting]) => !block[setting]).map(([newVar, , oldVar, value]) => [newVar, [oldVar, value]]));
 }
-function loadConfigFromEnv(host) {
-  const apiKey = process.env.HONCHO_API_KEY;
-  if (!apiKey) {
-    return null;
-  }
-  const resolvedHost = host ?? getDetectedHost();
-  const peerName = process.env.HONCHO_PEER_NAME || process.env.USER || process.env.USERNAME || "user";
-  const workspace = process.env.HONCHO_WORKSPACE || DEFAULT_WORKSPACE[resolvedHost];
-  const hostPeerEnv = resolvedHost === "cursor" ? process.env.HONCHO_CURSOR_PEER : process.env.HONCHO_CLAUDE_PEER;
-  const aiPeer = process.env.HONCHO_AI_PEER || hostPeerEnv || DEFAULT_AI_PEER[resolvedHost];
-  const endpoint = process.env.HONCHO_ENDPOINT;
-  const config2 = {
-    apiKey,
-    peerName,
-    workspace,
-    aiPeer,
-    saveMessages: process.env.HONCHO_SAVE_MESSAGES !== "false",
-    saveToolUse: process.env.HONCHO_SAVE_TOOL_USE === "true",
-    saveGitEvents: process.env.HONCHO_SAVE_GIT_EVENTS === "true",
-    enabled: process.env.HONCHO_ENABLED !== "false",
-    logging: process.env.HONCHO_LOGGING !== "false"
-  };
-  if (endpoint) {
-    if (endpoint === "local") {
-      config2.endpoint = { environment: "local" };
-    } else if (endpoint.startsWith("http")) {
-      config2.endpoint = { baseUrl: endpoint };
-    }
-  }
-  return config2;
+function honchoEnv(host) {
+  const legacy = Object.entries(legacyEnv(host));
+  if (!legacy.length)
+    return process.env;
+  return { ...process.env, ...Object.fromEntries(legacy.map(([k, [, value]]) => [k, value])) };
 }
-function mergeWithEnvVars(config2) {
-  if (process.env.HONCHO_API_KEY) {
-    config2.apiKey = process.env.HONCHO_API_KEY;
-  }
-  if (process.env.HONCHO_PEER_NAME) {
-    config2.peerName = process.env.HONCHO_PEER_NAME;
-  }
-  if (process.env.HONCHO_ENABLED === "false") {
-    config2.enabled = false;
-  }
-  if (process.env.HONCHO_LOGGING === "false") {
-    config2.logging = false;
-  }
-  if (process.env.HONCHO_SAVE_MESSAGES === "false") {
-    config2.saveMessages = false;
-  }
-  if (process.env.HONCHO_SAVE_TOOL_USE !== undefined) {
-    config2.saveToolUse = process.env.HONCHO_SAVE_TOOL_USE === "true";
-  }
-  if (process.env.HONCHO_SAVE_GIT_EVENTS !== undefined) {
-    config2.saveGitEvents = process.env.HONCHO_SAVE_GIT_EVENTS === "true";
-  }
-  return config2;
-}
-function writeConfigFile(data) {
-  if (existsSync3(CONFIG_FILE))
-    chmodSync(CONFIG_FILE, 384);
-  writeFileSync2(CONFIG_FILE, JSON.stringify(data, null, 2), { mode: 384 });
-}
-function saveConfig(config2) {
-  if (!existsSync3(CONFIG_DIR)) {
-    mkdirSync2(CONFIG_DIR, { recursive: true });
-  }
-  let existing = {};
-  if (existsSync3(CONFIG_FILE)) {
-    try {
-      existing = JSON.parse(readFileSync2(CONFIG_FILE, "utf-8"));
-    } catch {}
-  }
-  if (config2.sessions !== undefined) {
-    existing.sessions = config2.sessions;
-  }
-  const host = getDetectedHost();
-  if (!existing.hosts)
-    existing.hosts = {};
-  const existingHost = existing.hosts[host] ?? {};
-  const hostEntry = {};
-  const setHostIfExplicit = (key, value, rootValue) => {
-    if (value === undefined)
-      return;
-    const hasHostOverride = Object.prototype.hasOwnProperty.call(existingHost, key);
-    if (hasHostOverride || !deepEqual(value, rootValue)) {
-      hostEntry[key] = value;
-    }
-  };
-  setHostIfExplicit("workspace", config2.workspace, existing.workspace ?? DEFAULT_WORKSPACE[host]);
-  setHostIfExplicit("aiPeer", config2.aiPeer, existing.aiPeer ?? DEFAULT_AI_PEER[host]);
-  const enabledForSave = process.env.HONCHO_ENABLED === "false" && config2.enabled === false ? existingHost.enabled : config2.enabled;
-  const loggingForSave = process.env.HONCHO_LOGGING === "false" && config2.logging === false ? existingHost.logging : config2.logging;
-  const saveMessagesForSave = process.env.HONCHO_SAVE_MESSAGES === "false" && config2.saveMessages === false ? existingHost.saveMessages : config2.saveMessages;
-  setHostIfExplicit("enabled", enabledForSave, existing.enabled);
-  setHostIfExplicit("logging", loggingForSave, existing.logging);
-  setHostIfExplicit("saveMessages", saveMessagesForSave, existing.saveMessages);
-  setHostIfExplicit("sessionStrategy", config2.sessionStrategy, existing.sessionStrategy);
-  setHostIfExplicit("sessionPeerPrefix", config2.sessionPeerPrefix, existing.sessionPeerPrefix);
-  setHostIfExplicit("reasoningLevel", config2.reasoningLevel, existing.reasoningLevel);
-  setHostIfExplicit("observationMode", config2.observationMode, existing.observationMode);
-  setHostIfExplicit("messageUpload", config2.messageUpload, existing.messageUpload);
-  setHostIfExplicit("contextRefresh", config2.contextRefresh, existing.contextRefresh);
-  setHostIfExplicit("redactPatterns", config2.redactPatterns, existing.redactPatterns);
-  setHostIfExplicit("endpoint", config2.endpoint, existing.endpoint);
-  setHostIfExplicit("injection", config2.injection, existing.injection);
-  setHostIfExplicit("rememberTool", config2.rememberTool, existing.rememberTool);
-  if (existingHost.apiKey !== undefined) {
-    hostEntry.apiKey = existingHost.apiKey;
-  }
-  existing.hosts[host] = hostEntry;
-  writeConfigFile(existing);
-}
-function saveRootField(field, value) {
-  if (!existsSync3(CONFIG_DIR)) {
-    mkdirSync2(CONFIG_DIR, { recursive: true });
-  }
-  let existing = {};
-  if (existsSync3(CONFIG_FILE)) {
-    try {
-      existing = JSON.parse(readFileSync2(CONFIG_FILE, "utf-8"));
-    } catch {}
-  }
-  existing[field] = value;
-  writeConfigFile(existing);
-}
-function resolveWorktreeMainRoot(dir) {
-  try {
-    const gitPath = join3(dir, ".git");
-    if (!statSync(gitPath).isFile())
-      return null;
-    const match = readFileSync2(gitPath, "utf-8").match(/^gitdir:\s*(.+?)\s*$/m);
-    if (!match)
-      return null;
-    const gitdir = resolve(dir, match[1]);
-    const idx = gitdir.lastIndexOf(`${sep}worktrees${sep}`);
-    if (idx === -1)
-      return null;
-    const gitContainer = gitdir.slice(0, idx);
-    if (basename(gitContainer) === ".git")
-      return dirname(gitContainer);
-    if (gitContainer.endsWith(".git"))
-      return gitContainer;
-    return null;
-  } catch {
-    return null;
-  }
-}
-var MAX_GIT_WALK_UP = 12;
-function worktreeMainRootFor(cwd) {
-  try {
-    let dir = resolve(cwd);
-    for (let i = 0;i < MAX_GIT_WALK_UP; i++) {
-      if (existsSync3(join3(dir, ".git")))
-        return resolveWorktreeMainRoot(dir);
-      const parent = dirname(dir);
-      if (parent === dir)
-        break;
-      dir = parent;
-    }
-  } catch {}
-  return null;
-}
-function getSessionForPath(cwd, mainRoot) {
-  const config2 = loadConfig2();
-  if (!config2?.sessions)
-    return null;
-  if (config2.sessions[cwd])
-    return config2.sessions[cwd];
-  const mr = mainRoot === undefined ? worktreeMainRootFor(cwd) : mainRoot;
-  if (mr && config2.sessions[mr])
-    return config2.sessions[mr];
-  return null;
-}
-function deriveSessionName(strategy, cwd, opts = {}) {
-  const usePrefix = opts.sessionPeerPrefix !== false;
-  const peerPart = opts.peerName ? sanitizeForSessionName(opts.peerName) : "user";
-  const repoPart = sanitizeForSessionName(basename(cwd));
-  const base = usePrefix ? `${peerPart}-${repoPart}` : repoPart;
-  switch (strategy) {
-    case "git-branch": {
-      if (opts.branch) {
-        const branchPart = sanitizeForSessionName(opts.branch);
-        return `${base}-${branchPart}`;
-      }
-      return base;
-    }
-    case "chat-instance": {
-      if (opts.instanceId) {
-        return usePrefix ? `${peerPart}-chat-${opts.instanceId}` : `chat-${opts.instanceId}`;
-      }
-      return base;
-    }
-    case "per-directory":
-    default:
-      return base;
-  }
-}
-function getSessionName(cwd, instanceId) {
-  const config2 = loadConfig2();
-  const strategy = config2?.sessionStrategy ?? "per-directory";
-  const mainRoot = worktreeMainRootFor(cwd);
-  if (strategy === "per-directory") {
-    const configuredSession = getSessionForPath(cwd, mainRoot);
-    if (configuredSession) {
-      return configuredSession;
-    }
-  }
-  let branch;
-  if (strategy === "git-branch") {
-    branch = captureGitState(cwd)?.branch;
-  }
-  let resolvedInstanceId;
-  if (strategy === "chat-instance") {
-    resolvedInstanceId = instanceId || getInstanceIdForCwd(cwd) || getClaudeInstanceId() || undefined;
-  }
-  return deriveSessionName(strategy, mainRoot ?? cwd, {
-    peerName: config2?.peerName,
-    sessionPeerPrefix: config2?.sessionPeerPrefix,
-    branch,
-    instanceId: resolvedInstanceId
+function resolveHost(host) {
+  return resolveConfig(readConfigFile(), {
+    host,
+    env: honchoEnv(host),
+    defaults: { workspace: DEFAULT_WORKSPACE[host], aiPeer: DEFAULT_AI_PEER[host] },
+    legacy: LEGACY
   });
 }
-function setSessionForPath(cwd, sessionName) {
-  const config2 = loadConfig2();
-  if (!config2)
-    return;
-  if (!config2.sessions) {
-    config2.sessions = {};
-  }
-  config2.sessions[cwd] = sessionName;
-  saveConfig(config2);
+function isLoggingEnabled(host = getDetectedHost()) {
+  if (process.env.HONCHO_LOGGING === "false")
+    return false;
+  const file = readConfigFile();
+  const hosts = file.hosts && typeof file.hosts === "object" ? file.hosts : {};
+  const own = [hosts[host], hosts[host.replace(/_/g, "-")]].map((block) => block && typeof block === "object" ? block.logging : undefined).find((v) => v !== undefined);
+  return (own ?? file.logging) !== false;
 }
-function getInjectionConfig(config2) {
-  const injection = (config2 === undefined ? loadConfig2() : config2)?.injection;
-  const resolved = { ...DEFAULT_INJECTION, ...injection ?? {} };
-  resolved.perTurn = Array.isArray(resolved.perTurn) ? normalizePerTurn(resolved.perTurn) : DEFAULT_INJECTION.perTurn;
-  resolved.showContents = Array.isArray(resolved.showContents) ? normalizePerTurn(resolved.showContents) : DEFAULT_INJECTION.showContents;
-  return resolved;
+function loadConfig2(host = getDetectedHost()) {
+  const cfg = resolveHost(host);
+  const cred = pickCredential(readConfigFile(), { host, baseUrl: cfg.baseUrl, env: honchoEnv(host), legacy: LEGACY });
+  if (!cred)
+    return null;
+  const { token: token2, ...authState } = cred;
+  return {
+    apiKey: token2,
+    auth: { ...authState, host },
+    peerName: cfg.peerName,
+    workspace: cfg.workspace,
+    aiPeer: cfg.aiPeer,
+    baseUrl: cfg.baseUrl
+  };
 }
-function isLoggingEnabled() {
-  const config2 = loadConfig2();
-  return config2?.logging !== false;
+async function saveConfig(config2, field) {
+  const host = getDetectedHost();
+  const env = honchoEnv(host);
+  const write = (key, envVar) => key === field || !env[envVar];
+  const patch = {};
+  if (write("peerName", "HONCHO_PEER_NAME"))
+    patch.peerName = config2.peerName;
+  if (write("workspace", "HONCHO_WORKSPACE"))
+    patch.workspace = config2.workspace === DEFAULT_WORKSPACE[host] ? undefined : config2.workspace;
+  if (write("aiPeer", "HONCHO_AI_PEER"))
+    patch.aiPeer = config2.aiPeer === DEFAULT_AI_PEER[host] ? undefined : config2.aiPeer;
+  if (write("baseUrl", "HONCHO_BASE_URL"))
+    patch.baseUrl = config2.baseUrl === DEFAULT_BASE_URL ? undefined : config2.baseUrl;
+  await saveHost(configPath(), host, patch, LEGACY);
 }
-function isPluginEnabled() {
-  const config2 = loadConfig2();
-  return config2?.enabled !== false;
+function getConfigIssues(host = getDetectedHost()) {
+  return checkConfig(readConfigFile()).filter((i) => i.path === "schemaVersion" || i.path === "hosts" && i.message.includes(host)).map((i) => i.message);
+}
+var DEAD_HOST_KEYS = [
+  "sessionStrategy",
+  "sessionPeerPrefix",
+  "sessions",
+  "injection",
+  "contextRefresh",
+  "messageUpload",
+  "reasoningLevel",
+  "statusline",
+  "saveToolUse",
+  "saveGitEvents",
+  "redactPatterns",
+  "rememberTool",
+  "observationMode",
+  "saveMessages",
+  "enabled",
+  "globalOverride",
+  "linkedHosts"
+];
+async function migrateConfig(host = getDetectedHost()) {
+  try {
+    const changed = await migrateHost(configPath(), host, DEAD_HOST_KEYS, LEGACY);
+    if (changed.length)
+      return `[honcho] Moved your Honcho settings into hosts.${host} in ~/.honcho/config.json.`;
+  } catch {}
+  return;
+}
+function getScopeGroups(host = getDetectedHost()) {
+  const groups = readConfigFile().hosts?.[host]?.scopeGroups;
+  return groups && typeof groups === "object" ? groups : {};
+}
+function getSessionName(sessionId) {
+  const id = sessionId || process.env.CLAUDE_CODE_SESSION_ID;
+  return id ? sanitizeForSessionName(id) : null;
 }
 function getKnownHosts() {
-  const cfgPath = getConfigPath();
-  if (!existsSync3(cfgPath))
-    return [];
-  try {
-    const raw = JSON.parse(readFileSync2(cfgPath, "utf-8"));
-    return raw.hosts ? Object.keys(raw.hosts) : [];
-  } catch {
-    return [];
-  }
+  const hosts = readConfigFile().hosts;
+  return hosts && typeof hosts === "object" ? Object.keys(hosts) : [];
 }
-function getHonchoBaseUrlForEndpoint(endpoint) {
-  if (endpoint?.baseUrl) {
-    const url = endpoint.baseUrl;
-    return url.endsWith("/v3") ? url : `${url}/v3`;
+async function refreshCredential(config2) {
+  const host = config2.auth?.host ?? getDetectedHost();
+  const cred = await ensureFreshCredential({ path: configPath(), host, baseUrl: config2.baseUrl, env: honchoEnv(host), legacy: LEGACY });
+  if (!cred)
+    return;
+  const { token: token2, ...authState } = cred;
+  config2.apiKey = token2;
+  config2.auth = { ...authState, host };
+}
+function getAuthNotice(config2) {
+  if (config2.auth?.reauthRequired) {
+    return "[honcho] Your Honcho sign-in has expired. Run /honcho setup to sign in again.";
   }
-  if (endpoint?.environment === "local") {
-    return HONCHO_BASE_URLS.local;
-  }
-  return HONCHO_BASE_URLS.production;
+  return;
 }
 function getHonchoBaseUrl(config2) {
-  return getHonchoBaseUrlForEndpoint(config2.endpoint);
+  return `${config2.baseUrl}/v3`;
 }
 function getTelemetryHeaders(host = getDetectedHost()) {
   return telemetryHeaders({
@@ -29413,66 +29439,20 @@ function getHonchoClientOptions(config2) {
   };
 }
 function isProductionEndpoint(config2) {
-  return getHonchoBaseUrl(config2) === HONCHO_BASE_URLS.production;
+  return config2.baseUrl === DEFAULT_BASE_URL;
 }
 function getEndpointInfo(config2) {
-  if (config2.endpoint?.baseUrl) {
-    return { type: "custom", url: config2.endpoint.baseUrl };
-  }
-  if (config2.endpoint?.environment === "local") {
-    return { type: "local", url: HONCHO_BASE_URLS.local };
-  }
-  return { type: "production", url: HONCHO_BASE_URLS.production };
-}
-var VALID_ENVIRONMENTS = new Set(["production", "local"]);
-function getObservationMode(config2) {
-  return config2.observationMode ?? "unified";
+  return { type: isProductionEndpoint(config2) ? "production" : "custom", url: config2.baseUrl };
 }
 
-// src/redact.ts
-var DEFAULT_RULES = [
-  {
-    pattern: /\b(\w*(?:PASSWORD|PASSWD|PWD|SECRET|TOKEN|API_?KEY|ACCESS_KEY|CREDENTIALS?)\w*)\s*=\s*("[^"]*"|'[^']*'|[^\s;|&"']+)/gi,
-    replacement: "$1=***"
-  },
-  {
-    pattern: /(--(?:password|passwd|pwd|token|api-?key|secret|auth)[= ])(?:"[^"]*"|'[^']*'|[^\s;|&"']+)/gi,
-    replacement: "$1***"
-  },
-  {
-    pattern: /(authorization:\s*(?:bearer|basic|token)\s+)[^\s"']+/gi,
-    replacement: "$1***"
-  },
-  {
-    pattern: /([a-z][a-z0-9+.-]*:\/\/[^/\s:@]+:)[^@\s]+@/gi,
-    replacement: "$1***@"
-  },
-  {
-    pattern: /\b(?:hch[_-]?[A-Za-z0-9_-]{16,}|AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9_-]{16,}|(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|glpat-[A-Za-z0-9_-]{20,}|npm_[A-Za-z0-9]{36})\b/g,
-    replacement: "***"
-  }
-];
-function validateRedactPattern(source) {
-  try {
-    new RegExp(source);
-    return null;
-  } catch (e) {
-    return `Invalid regex ${JSON.stringify(source)}: ${e instanceof Error ? e.message : String(e)}`;
-  }
+// src/honcho-client.ts
+var import_sdk = __toESM(require_dist2(), 1);
+async function createHonchoClient(config2, overrides = {}) {
+  await refreshCredential(config2);
+  return new import_sdk.Honcho({ ...getHonchoClientOptions(config2), ...overrides });
 }
-function redactSecrets(text, extraPatterns) {
-  let result = text;
-  for (const rule of DEFAULT_RULES) {
-    result = result.replace(rule.pattern, rule.replacement);
-  }
-  for (const source of extraPatterns ?? []) {
-    try {
-      result = result.replace(new RegExp(source, "gi"), "***");
-    } catch {
-      continue;
-    }
-  }
-  return result;
+function setClientApiKey(honcho, token2) {
+  honcho.http.apiKey = token2;
 }
 
 // src/styles.ts
@@ -29498,23 +29478,14 @@ var ENV_SHADOW_MAP = {
   peerName: "HONCHO_PEER_NAME",
   workspace: "HONCHO_WORKSPACE",
   aiPeer: "HONCHO_AI_PEER",
-  enabled: "HONCHO_ENABLED",
-  logging: "HONCHO_LOGGING",
-  saveMessages: "HONCHO_SAVE_MESSAGES",
-  "endpoint.baseUrl": "HONCHO_ENDPOINT",
-  "endpoint.environment": "HONCHO_ENDPOINT"
+  baseUrl: "HONCHO_BASE_URL"
 };
-var DANGEROUS_FIELDS = new Set(["workspace", "endpoint.environment", "endpoint.baseUrl"]);
+var DANGEROUS_FIELDS = new Set(["workspace", "baseUrl"]);
 var SESSION_AFFECTING_FIELDS = new Set([
   "workspace",
   "aiPeer",
   "peerName",
-  "sessionStrategy",
-  "sessionPeerPrefix",
-  "endpoint.environment",
-  "endpoint.baseUrl",
-  "globalOverride",
-  "observationMode"
+  "baseUrl"
 ]);
 function renderCard(rows, title) {
   const labelWidth = 12;
@@ -29531,7 +29502,7 @@ function renderCard(rows, title) {
   return [top, blank, ...body, blank, bot].join(`
 `);
 }
-function handleGetConfig(cwd) {
+function handleGetConfig() {
   const cfg = loadConfig2();
   const host = getDetectedHost();
   const cfgPath = getConfigPath();
@@ -29539,32 +29510,16 @@ function handleGetConfig(cwd) {
   let rawFile = {};
   if (cfgExists) {
     try {
-      rawFile = JSON.parse(readFileSync3(cfgPath, "utf-8"));
+      rawFile = JSON.parse(readFileSync4(cfgPath, "utf-8"));
     } catch {}
   }
-  const globalOverride = rawFile.globalOverride === true;
   const resolved = cfg ? {
     peerName: cfg.peerName,
     aiPeer: cfg.aiPeer,
     workspace: cfg.workspace,
-    endpoint: getEndpointInfo(cfg),
-    globalOverride,
-    sessionStrategy: cfg.sessionStrategy ?? "per-directory",
-    sessionPeerPrefix: cfg.sessionPeerPrefix !== false,
-    sessions: cfg.sessions ?? {},
-    messageUpload: cfg.messageUpload ?? {},
-    contextRefresh: cfg.contextRefresh ?? {},
-    reasoningLevel: cfg.reasoningLevel ?? "medium",
-    observationMode: cfg.observationMode ?? "unified",
-    statusline: cfg.statusline ?? "on",
-    redactPatterns: cfg.redactPatterns ?? [],
-    injection: cfg.injection ?? {},
-    rememberTool: cfg.rememberTool === true,
-    enabled: cfg.enabled !== false,
-    logging: cfg.logging !== false,
-    saveMessages: cfg.saveMessages !== false
+    endpoint: getEndpointInfo(cfg)
   } : null;
-  const sessionName = cfg ? getSessionName(cwd) : null;
+  const sessionName = cfg ? getSessionName() : null;
   const endpointInfo = cfg ? getEndpointInfo(cfg) : null;
   const endpointLabel = endpointInfo ? endpointInfo.type === "production" ? "platform" : endpointInfo.type : null;
   const sessionUrl = cfg && sessionName ? honchoSessionUrl(cfg, sessionName) : null;
@@ -29590,47 +29545,32 @@ function handleGetConfig(cwd) {
     otherHosts
   };
   const warnings = [];
-  const hasHostsBlock = !!rawFile.hosts?.[host];
-  const hostSpecificFields = new Set(["workspace", "aiPeer"]);
   for (const [field, envVar] of Object.entries(ENV_SHADOW_MAP)) {
     const envVal = process.env[envVar];
-    if (!envVal)
-      continue;
-    if (hasHostsBlock && hostSpecificFields.has(field)) {
-      warnings.push(`env var ${envVar}="${envVal}" is set but ignored (hosts block takes precedence). Remove it from your shell config.`);
-    } else {
+    if (envVal)
       warnings.push(`${field} is shadowed by env var ${envVar}="${envVal}"`);
-    }
+  }
+  for (const [envVar, [oldVar, value]] of Object.entries(legacyEnv(host))) {
+    const field = Object.keys(ENV_SHADOW_MAP).find((f) => ENV_SHADOW_MAP[f] === envVar);
+    warnings.push(`${field} comes from the older env var ${oldVar}="${value}"; setting ${field} with set_config replaces it.`);
   }
   const envApiKey = process.env.HONCHO_API_KEY;
-  if (envApiKey && rawFile.apiKey) {
+  const fileApiKey = rawFile.hosts?.[host]?.apiKey;
+  if (envApiKey && fileApiKey) {
     const mask = (k) => `${k.slice(0, 10)}…${k.slice(-4)}`;
-    if (envApiKey !== rawFile.apiKey) {
-      warnings.push(`HONCHO_API_KEY env var (${mask(envApiKey)}) overrides config.json apiKey (${mask(rawFile.apiKey)}) and is the key actually in use. ` + `An API key selects the Honcho environment, so reads/writes go to the env var's environment, NOT the one config.json names. ` + `Unset HONCHO_API_KEY in your shell to use config.json's key.`);
+    if (envApiKey !== fileApiKey) {
+      warnings.push(`HONCHO_API_KEY env var (${mask(envApiKey)}) overrides config.json apiKey (${mask(fileApiKey)}) and is the key actually in use. ` + `An API key selects the Honcho environment, so reads/writes go to the env var's environment, NOT the one config.json names. ` + `Unset HONCHO_API_KEY in your shell to use config.json's key.`);
     } else {
       warnings.push(`apiKey is also set via HONCHO_API_KEY env var (identical value). The env var takes precedence at runtime.`);
     }
   }
-  if (cfgExists && !rawFile.hosts) {
-    warnings.push("Config uses legacy flat fields. Consider running /honcho:config to migrate to hosts block.");
-  }
-  if (cfgExists && rawFile.hosts && rawFile.workspace && rawFile.globalOverride === undefined) {
-    warnings.push("Config has flat 'workspace' alongside hosts block but no 'globalOverride' set. The flat field is unused. Set globalOverride=true to apply it globally, or remove it.");
-  }
-  const strategyLabels = {
-    "per-directory": "per directory",
-    "git-branch": "per git branch",
-    "chat-instance": "per chat"
-  };
-  const hostLabel = endpointInfo ? endpointInfo.type === "production" ? `platform (app.honcho.dev)` : endpointInfo.type === "local" ? `local (${endpointInfo.url})` : endpointInfo.url : "unknown";
+  warnings.push(...getConfigIssues(host));
+  const hostLabel = endpointInfo ? endpointInfo.type === "production" ? `platform (app.honcho.dev)` : endpointInfo.url : "unknown";
   const card = cfg ? renderCard([
     ["workspace", cfg.workspace],
     ["session", sessionName ?? "unknown"],
-    ["mapping", strategyLabels[cfg.sessionStrategy ?? "per-directory"] ?? cfg.sessionStrategy ?? "per directory"],
     ["peer", `${cfg.peerName} / ${cfg.aiPeer}`],
-    ["host", hostLabel],
-    ["messages", cfg.saveMessages !== false ? "saving enabled" : "saving disabled"],
-    ["obs mode", cfg.observationMode ?? "unified"]
+    ["host", hostLabel]
   ], "current honcho config") : null;
   return {
     content: [{
@@ -29639,32 +29579,7 @@ function handleGetConfig(cwd) {
     }]
   };
 }
-function coerceStringArray(value) {
-  let v = value;
-  if (typeof v === "string") {
-    try {
-      v = JSON.parse(v);
-    } catch {
-      return null;
-    }
-  }
-  return Array.isArray(v) ? v.map(String) : null;
-}
-function validateComponentArray(value, allowed, field) {
-  const example = JSON.stringify(allowed.slice(0, 2));
-  const err = (msg) => ({
-    content: [{ type: "text", text: JSON.stringify({ success: false, error: msg }, null, 2) }],
-    isError: true
-  });
-  const arr = coerceStringArray(value);
-  if (!arr)
-    return err(`${field} must be an array of component names, e.g. ${example}`);
-  const bad = arr.filter((v) => !allowed.includes(v));
-  if (bad.length)
-    return err(`${field} entries must be one of: ${allowed.join(", ")} (got: ${bad.join(", ")})`);
-  return arr;
-}
-function handleSetConfig(args) {
+async function handleSetConfig(args) {
   const field = args.field;
   if (typeof field !== "string" || !field) {
     return {
@@ -29677,8 +29592,7 @@ function handleSetConfig(args) {
   if (DANGEROUS_FIELDS.has(field) && !confirm) {
     const descriptions = {
       workspace: "Switches to a different workspace.",
-      "endpoint.environment": "Switches the Honcho backend.",
-      "endpoint.baseUrl": "Switches the Honcho backend URL."
+      baseUrl: "Switches the Honcho backend URL."
     };
     return {
       content: [{
@@ -29703,7 +29617,6 @@ function handleSetConfig(args) {
     };
   }
   let previousValue;
-  let cacheInvalidation = null;
   const warnings = [];
   const shadowEnv = ENV_SHADOW_MAP[field];
   if (shadowEnv && process.env[shadowEnv]) {
@@ -29713,301 +29626,19 @@ function handleSetConfig(args) {
     case "peerName":
       previousValue = cfg.peerName;
       cfg.peerName = String(value);
-      saveRootField("peerName", cfg.peerName);
-      clearPeerCache();
-      clearUserContextOnly();
-      if (String(value) !== String(previousValue) && Object.keys(cfg.sessions ?? {}).length > 0) {
-        warnings.push(`${Object.keys(cfg.sessions ?? {}).length} session override(s) kept under their existing names; only newly created sessions use the new naming. Use sessions.set/sessions.remove to adjust individual mappings.`);
-      }
-      cacheInvalidation = { cleared: ["peer IDs", "user context"], reason: "Peer name changed" };
       break;
     case "aiPeer":
       previousValue = cfg.aiPeer;
       cfg.aiPeer = String(value);
-      clearPeerCache();
-      clearClaudeContextOnly();
-      cacheInvalidation = { cleared: ["peer IDs", "claude context"], reason: "AI peer changed" };
       break;
     case "workspace":
       previousValue = cfg.workspace;
       cfg.workspace = String(value);
-      if (String(value) !== String(previousValue)) {
-        clearIdCache();
-        clearUserContextOnly();
-        clearClaudeContextOnly();
-        cacheInvalidation = { cleared: ["all IDs", "all context"], reason: "Workspace changed" };
-      }
       break;
-    case "endpoint.environment": {
-      previousValue = cfg.endpoint?.environment;
-      if (!cfg.endpoint)
-        cfg.endpoint = {};
-      const envVal = String(value) === "platform" ? "production" : String(value);
-      cfg.endpoint.environment = envVal;
-      cfg.endpoint.baseUrl = undefined;
-      saveRootField("endpoint", cfg.endpoint);
-      clearIdCache();
-      clearUserContextOnly();
-      clearClaudeContextOnly();
-      cacheInvalidation = { cleared: ["all IDs", "all context"], reason: "Endpoint changed" };
+    case "baseUrl":
+      previousValue = cfg.baseUrl;
+      cfg.baseUrl = String(value);
       break;
-    }
-    case "endpoint.baseUrl":
-      previousValue = cfg.endpoint?.baseUrl;
-      if (!cfg.endpoint)
-        cfg.endpoint = {};
-      cfg.endpoint.baseUrl = String(value);
-      cfg.endpoint.environment = undefined;
-      saveRootField("endpoint", cfg.endpoint);
-      clearIdCache();
-      clearUserContextOnly();
-      clearClaudeContextOnly();
-      cacheInvalidation = { cleared: ["all IDs", "all context"], reason: "Endpoint URL changed" };
-      break;
-    case "sessionStrategy": {
-      const prevStrategy = cfg.sessionStrategy ?? "per-directory";
-      previousValue = prevStrategy;
-      cfg.sessionStrategy = String(value);
-      if (String(value) !== prevStrategy && String(value) !== "per-directory" && Object.keys(cfg.sessions ?? {}).length > 0) {
-        warnings.push(`${Object.keys(cfg.sessions ?? {}).length} session override(s) kept but inactive: overrides only apply under the per-directory strategy.`);
-      }
-      break;
-    }
-    case "sessionPeerPrefix": {
-      const prevPrefix = cfg.sessionPeerPrefix !== false;
-      previousValue = prevPrefix;
-      cfg.sessionPeerPrefix = coerceBoolean(value);
-      if (cfg.sessionPeerPrefix !== prevPrefix && Object.keys(cfg.sessions ?? {}).length > 0) {
-        warnings.push(`${Object.keys(cfg.sessions ?? {}).length} session override(s) kept under their existing names; only newly created sessions use the new naming. Use sessions.set/sessions.remove to adjust individual mappings.`);
-      }
-      break;
-    }
-    case "globalOverride":
-      previousValue = cfg.globalOverride ?? false;
-      cfg.globalOverride = coerceBoolean(value);
-      saveRootField("globalOverride", cfg.globalOverride);
-      break;
-    case "enabled":
-      previousValue = cfg.enabled;
-      cfg.enabled = coerceBoolean(value);
-      break;
-    case "logging":
-      previousValue = cfg.logging;
-      cfg.logging = coerceBoolean(value);
-      break;
-    case "saveMessages":
-      previousValue = cfg.saveMessages;
-      cfg.saveMessages = coerceBoolean(value);
-      break;
-    case "messageUpload.maxUserTokens":
-      previousValue = cfg.messageUpload?.maxUserTokens;
-      if (!cfg.messageUpload)
-        cfg.messageUpload = {};
-      cfg.messageUpload.maxUserTokens = value === null ? undefined : Number(value);
-      break;
-    case "messageUpload.maxAssistantTokens":
-      previousValue = cfg.messageUpload?.maxAssistantTokens;
-      if (!cfg.messageUpload)
-        cfg.messageUpload = {};
-      cfg.messageUpload.maxAssistantTokens = value === null ? undefined : Number(value);
-      break;
-    case "messageUpload.summarizeAssistant":
-      previousValue = cfg.messageUpload?.summarizeAssistant;
-      if (!cfg.messageUpload)
-        cfg.messageUpload = {};
-      cfg.messageUpload.summarizeAssistant = coerceBoolean(value);
-      break;
-    case "contextRefresh.messageThreshold":
-      previousValue = cfg.contextRefresh?.messageThreshold;
-      if (!cfg.contextRefresh)
-        cfg.contextRefresh = {};
-      cfg.contextRefresh.messageThreshold = Number(value);
-      break;
-    case "contextRefresh.ttlSeconds":
-      previousValue = cfg.contextRefresh?.ttlSeconds;
-      if (!cfg.contextRefresh)
-        cfg.contextRefresh = {};
-      cfg.contextRefresh.ttlSeconds = Number(value);
-      break;
-    case "contextRefresh.skipDialectic":
-      previousValue = cfg.contextRefresh?.skipDialectic;
-      if (!cfg.contextRefresh)
-        cfg.contextRefresh = {};
-      cfg.contextRefresh.skipDialectic = coerceBoolean(value);
-      break;
-    case "reasoningLevel":
-      previousValue = cfg.reasoningLevel ?? "medium";
-      cfg.reasoningLevel = String(value);
-      break;
-    case "observationMode":
-      previousValue = cfg.observationMode ?? "unified";
-      cfg.observationMode = String(value);
-      break;
-    case "statusline": {
-      const mode = String(value).toLowerCase();
-      if (mode !== "on" && mode !== "off") {
-        return {
-          content: [{ type: "text", text: JSON.stringify({ success: false, error: "statusline must be one of: on, off" }, null, 2) }],
-          isError: true
-        };
-      }
-      previousValue = cfg.statusline ?? "on";
-      cfg.statusline = mode;
-      saveRootField("statusline", cfg.statusline);
-      break;
-    }
-    case "redactPatterns": {
-      const arr = coerceStringArray(value);
-      if (!arr) {
-        return {
-          content: [{ type: "text", text: JSON.stringify({ success: false, error: "redactPatterns must be an array of regex strings" }, null, 2) }],
-          isError: true
-        };
-      }
-      for (const source of arr) {
-        const err = validateRedactPattern(source);
-        if (err) {
-          return {
-            content: [{ type: "text", text: JSON.stringify({ success: false, error: err }, null, 2) }],
-            isError: true
-          };
-        }
-      }
-      previousValue = cfg.redactPatterns;
-      cfg.redactPatterns = arr;
-      break;
-    }
-    case "injection.sessionStart": {
-      const arr = validateComponentArray(value, SESSION_START_COMPONENTS, field);
-      if (!Array.isArray(arr))
-        return arr;
-      previousValue = cfg.injection?.sessionStart;
-      if (!cfg.injection)
-        cfg.injection = {};
-      cfg.injection.sessionStart = arr;
-      break;
-    }
-    case "injection.perTurn": {
-      const raw = coerceStringArray(value);
-      const arr = validateComponentArray(raw ? normalizePerTurn(raw) : value, PER_TURN_COMPONENTS, field);
-      if (!Array.isArray(arr))
-        return arr;
-      previousValue = cfg.injection?.perTurn;
-      if (!cfg.injection)
-        cfg.injection = {};
-      cfg.injection.perTurn = arr;
-      break;
-    }
-    case "injection.showContents": {
-      const raw = coerceStringArray(value);
-      const arr = validateComponentArray(raw ? normalizePerTurn(raw) : value, PER_TURN_COMPONENTS, field);
-      if (!Array.isArray(arr))
-        return arr;
-      previousValue = cfg.injection?.showContents;
-      if (!cfg.injection)
-        cfg.injection = {};
-      cfg.injection.showContents = arr;
-      break;
-    }
-    case "injection.searchTopK":
-      previousValue = cfg.injection?.searchTopK;
-      if (!cfg.injection)
-        cfg.injection = {};
-      cfg.injection.searchTopK = Number(value);
-      break;
-    case "injection.maxConclusions":
-      previousValue = cfg.injection?.maxConclusions;
-      if (!cfg.injection)
-        cfg.injection = {};
-      cfg.injection.maxConclusions = Number(value);
-      break;
-    case "injection.searchMaxDistance":
-      previousValue = cfg.injection?.searchMaxDistance;
-      if (!cfg.injection)
-        cfg.injection = {};
-      cfg.injection.searchMaxDistance = Number(value);
-      break;
-    case "injection.sessionContextTokens": {
-      const tokens = Number(value);
-      if (!Number.isFinite(tokens) || tokens <= 0) {
-        return {
-          content: [{ type: "text", text: JSON.stringify({ success: false, error: "injection.sessionContextTokens must be a positive number" }, null, 2) }],
-          isError: true
-        };
-      }
-      previousValue = cfg.injection?.sessionContextTokens;
-      if (!cfg.injection)
-        cfg.injection = {};
-      cfg.injection.sessionContextTokens = tokens;
-      break;
-    }
-    case "rememberTool":
-      previousValue = cfg.rememberTool;
-      cfg.rememberTool = coerceBoolean(value);
-      break;
-    case "injection.searchQuerySource":
-      if (value !== "topics" && value !== "prompt") {
-        return {
-          content: [{ type: "text", text: JSON.stringify({ success: false, error: `injection.searchQuerySource must be "topics" or "prompt"` }, null, 2) }],
-          isError: true
-        };
-      }
-      previousValue = cfg.injection?.searchQuerySource;
-      if (!cfg.injection)
-        cfg.injection = {};
-      cfg.injection.searchQuerySource = value;
-      break;
-    case "injection.dialecticTemplate":
-      previousValue = cfg.injection?.dialecticTemplate;
-      if (!cfg.injection)
-        cfg.injection = {};
-      cfg.injection.dialecticTemplate = String(value);
-      break;
-    case "injection.dialecticReasoning": {
-      const level = String(value);
-      if (!REASONING_LEVELS.includes(level)) {
-        return {
-          content: [{ type: "text", text: JSON.stringify({ success: false, error: `injection.dialecticReasoning must be one of: ${REASONING_LEVELS.join(", ")}` }, null, 2) }],
-          isError: true
-        };
-      }
-      previousValue = cfg.injection?.dialecticReasoning;
-      if (!cfg.injection)
-        cfg.injection = {};
-      cfg.injection.dialecticReasoning = level;
-      break;
-    }
-    case "sessions.set": {
-      const obj = value;
-      const path = obj?.path;
-      const sName = obj?.name;
-      if (typeof path !== "string" || !path || typeof sName !== "string" || !sName) {
-        return {
-          content: [{ type: "text", text: JSON.stringify({ success: false, error: "sessions.set requires {path: string, name: string}" }, null, 2) }],
-          isError: true
-        };
-      }
-      if (!cfg.sessions)
-        cfg.sessions = {};
-      previousValue = cfg.sessions[path] ?? null;
-      cfg.sessions[path] = sName;
-      break;
-    }
-    case "sessions.remove": {
-      const obj = value;
-      const rPath = obj?.path;
-      if (typeof rPath !== "string" || !rPath) {
-        return {
-          content: [{ type: "text", text: JSON.stringify({ success: false, error: "sessions.remove requires {path: string}" }, null, 2) }],
-          isError: true
-        };
-      }
-      if (!cfg.sessions)
-        cfg.sessions = {};
-      previousValue = cfg.sessions[rPath] ?? null;
-      delete cfg.sessions[rPath];
-      break;
-    }
     default:
       return {
         content: [{
@@ -30017,31 +29648,19 @@ function handleSetConfig(args) {
         isError: true
       };
   }
-  saveConfig(cfg);
+  await saveConfig(cfg, field);
+  if (!loadConfig2()) {
+    warnings.push(`No credential is saved for ${cfg.baseUrl} (an API key is dropped when the server changes). Run /honcho setup to add one.`);
+  }
   const endpointInfo = getEndpointInfo(cfg);
   const resolved = {
     peerName: cfg.peerName,
     aiPeer: cfg.aiPeer,
     workspace: cfg.workspace,
-    endpoint: endpointInfo,
-    sessionStrategy: cfg.sessionStrategy ?? "per-directory",
-    sessionPeerPrefix: cfg.sessionPeerPrefix !== false,
-    sessions: cfg.sessions ?? {},
-    messageUpload: cfg.messageUpload ?? {},
-    contextRefresh: cfg.contextRefresh ?? {},
-    reasoningLevel: cfg.reasoningLevel ?? "medium",
-    observationMode: cfg.observationMode ?? "unified",
-    statusline: cfg.statusline ?? "on",
-    redactPatterns: cfg.redactPatterns ?? [],
-    injection: cfg.injection ?? {},
-    rememberTool: cfg.rememberTool === true,
-    enabled: cfg.enabled !== false,
-    logging: cfg.logging !== false,
-    saveMessages: cfg.saveMessages !== false
+    endpoint: endpointInfo
   };
   const restartWarning = SESSION_AFFECTING_FIELDS.has(field) ? "Close and restart all active Claude Code sessions. Open sessions still use the previous config and will write to the wrong Honcho session." : undefined;
-  const cwd = getLastActiveCwd() || process.cwd();
-  const newSessionName = SESSION_AFFECTING_FIELDS.has(field) ? getSessionName(cwd) : undefined;
+  const newSessionName = SESSION_AFFECTING_FIELDS.has(field) ? getSessionName() : undefined;
   const sessionUrl = newSessionName ? honchoSessionUrl(cfg, newSessionName) ?? undefined : undefined;
   return {
     content: [{
@@ -30051,7 +29670,6 @@ function handleSetConfig(args) {
         field,
         previousValue,
         newValue: value,
-        cacheInvalidation,
         restartWarning,
         sessionUrl,
         warnings: warnings.length ? warnings : undefined,
@@ -30061,32 +29679,15 @@ function handleSetConfig(args) {
   };
 }
 var DIALECTIC_TIMEOUT_MS = 600000;
-var REMEMBER_REASONING_LEVELS = ["low", "medium", "high"];
-var REMEMBER_MAX_QUERIES = 5;
-var REMEMBER_TOOL = {
-  name: "honcho_remember",
-  description: "Recall what Honcho knows about the user by asking several questions at once. " + "Fans out up to 5 parallel dialectic queries and returns a labeled, per-question answer. " + "Use this liberally and proactively — before starting a task, whenever the user's " + "preferences, past decisions, or history could shape your response, when you're " + "about to guess at something they've likely told you before, or when the user asks to " + "catch up, resume, or recall what you were working on together ('where are we', " + "'what did we just do'). Prefer asking several " + "focused questions in one call over one broad question. Pick reasoning_level by need: " + "'low' for quick factual lookups, 'medium' for general recall, 'high' for questions " + "that need real reasoning over the user's context.",
-  inputSchema: {
-    type: "object",
-    properties: {
-      queries: {
-        type: "array",
-        items: { type: "string" },
-        minItems: 1,
-        maxItems: REMEMBER_MAX_QUERIES,
-        description: `1–${REMEMBER_MAX_QUERIES} natural-language questions about the user, dispatched concurrently.`
-      },
-      reasoning_level: {
-        type: "string",
-        enum: [...REMEMBER_REASONING_LEVELS],
-        description: "Reasoning budget applied to every query in this call. 'low' = quick lookups, " + "'medium' = general recall, 'high' = complex reasoning over the user's context."
-      }
-    },
-    required: ["queries", "reasoning_level"]
-  }
-};
+var DERIVED_ONLY = { level: { in: ["deductive", "inductive", "contradiction"] } };
+function parseScope(value) {
+  const names = (Array.isArray(value) ? value : [value]).filter((v) => typeof v === "string" && v.trim() !== "").map((v) => v.trim());
+  if (names.length === 0)
+    return;
+  return names.length === 1 ? names[0] : names;
+}
 var NOT_CONFIGURED_RESULT = {
-  content: [{ type: "text", text: "Honcho isn't configured; run /honcho:setup to connect it, then try again." }],
+  content: [{ type: "text", text: "Honcho isn't configured; run /honcho setup to connect it, then try again." }],
   isError: true
 };
 function createClients() {
@@ -30095,8 +29696,8 @@ function createClients() {
     return null;
   return {
     config: config2,
-    honcho: new import_sdk.Honcho(getHonchoClientOptions(config2)),
-    honchoDialectic: new import_sdk.Honcho({
+    honcho: new import_sdk2.Honcho(getHonchoClientOptions(config2)),
+    honchoDialectic: new import_sdk2.Honcho({
       ...getHonchoClientOptions(config2),
       timeout: DIALECTIC_TIMEOUT_MS,
       maxRetries: 0
@@ -30107,7 +29708,7 @@ async function runMcpServer() {
   setDetectedHost("claude_code");
   let clients = createClients();
   if (!clients) {
-    console.error("[honcho-mcp] Not configured. Run /honcho:setup");
+    console.error("[honcho-mcp] Not configured. Run /honcho setup");
   }
   const server = new Server({
     name: "honcho",
@@ -30117,14 +29718,12 @@ async function runMcpServer() {
       tools: {}
     }
   });
-  const rememberEnabled = clients?.config.rememberTool === true;
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     return {
       tools: [
-        ...rememberEnabled ? [REMEMBER_TOOL] : [],
         {
           name: "search",
-          description: "Semantic search across messages and saved conclusions. Messages default to the current session; use scope='workspace' to search across all sessions. Conclusions are always searched workspace-wide.",
+          description: "Semantic search across messages and derived conclusions. Messages are searched across all sessions by default; use scope='session' for this chat's session only. Conclusions are always searched workspace-wide.",
           inputSchema: {
             type: "object",
             properties: {
@@ -30140,8 +29739,8 @@ async function runMcpServer() {
               scope: {
                 type: "string",
                 enum: ["session", "workspace"],
-                description: "Search scope. 'session' searches only the current directory's session (default). 'workspace' searches across all sessions.",
-                default: "session"
+                description: "Search scope. 'workspace' (default) searches all sessions. 'session' searches only this Claude Code chat's session.",
+                default: "workspace"
               }
             },
             required: ["query"]
@@ -30149,18 +29748,27 @@ async function runMcpServer() {
         },
         {
           name: "chat",
-          description: "Query Honcho's knowledge about the user using dialectic reasoning",
+          description: "Ask Honcho a question and get a reasoned answer from memory. By default it answers about the user from everything Honcho knows about them. " + "Pass `scope` to answer only from the sessions in one or more scopes (each Claude Code chat is in a scope for its git repository and one for its machine). " + "Pass `workspace: true` to ask about the whole workspace — every peer, not just the user.",
           inputSchema: {
             type: "object",
             properties: {
               query: {
                 type: "string",
-                description: "Natural language question about the user"
+                description: "Natural language question"
+              },
+              scope: {
+                anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }],
+                description: "Scope name, or several, to limit the answer to (e.g. a repository or machine name)."
+              },
+              workspace: {
+                type: "boolean",
+                description: "Ask across the whole workspace instead of about the user. Combine with `scope` to limit it.",
+                default: false
               },
               reasoning_level: {
                 type: "string",
                 enum: ["minimal", "low", "medium", "high", "max"],
-                description: "Reasoning budget for this query. Use 'low' for simple lookups, 'medium' for general questions, 'high'/'max' for complex reasoning about the user's context. Defaults to config value or 'medium'."
+                description: "Reasoning budget for this query. Use 'low' for simple lookups, 'medium' for general questions, 'high'/'max' for complex reasoning. Defaults to 'medium'."
               }
             },
             required: ["query"]
@@ -30182,7 +29790,7 @@ async function runMcpServer() {
         },
         {
           name: "list_conclusions",
-          description: "List conclusions Honcho has saved about the user. Use this to review what is remembered before creating duplicates, or to find IDs for deletion.",
+          description: "List conclusions Honcho has derived about the user (explicit conclusions are excluded). Use this to review what is remembered before creating duplicates, or to find IDs for deletion.",
           inputSchema: {
             type: "object",
             properties: {
@@ -30201,7 +29809,7 @@ async function runMcpServer() {
         },
         {
           name: "query_conclusions",
-          description: "Semantically search conclusions Honcho has saved about the user. Returns IDs usable with delete_conclusion — much faster than paging list_conclusions when looking for something specific.",
+          description: "Semantically search conclusions Honcho has derived about the user (explicit conclusions are excluded). Returns IDs usable with delete_conclusion — much faster than paging list_conclusions when looking for something specific.",
           inputSchema: {
             type: "object",
             properties: {
@@ -30233,36 +29841,6 @@ async function runMcpServer() {
           }
         },
         {
-          name: "get_briefing",
-          description: "Load the session briefing: the stored long summary of this session plus the user's peer card (identity/attribute profile). " + "Call this once at the start of a session when the session-start directives ask for it, or any time you need to catch up on where the session left off.",
-          inputSchema: {
-            type: "object",
-            properties: {}
-          }
-        },
-        {
-          name: "get_context",
-          description: "Retrieve the full context object (representation + peer card) from Honcho for the current user. Scoped by observation mode.",
-          inputSchema: {
-            type: "object",
-            properties: {
-              max_conclusions: {
-                type: "number",
-                description: "Max conclusions to include (default: 25)",
-                default: 25
-              }
-            }
-          }
-        },
-        {
-          name: "get_representation",
-          description: "Retrieve the user's representation string from Honcho. Lighter-weight than get_context.",
-          inputSchema: {
-            type: "object",
-            properties: {}
-          }
-        },
-        {
           name: "get_config",
           description: "Get the current Honcho plugin configuration, cache state, and diagnostic warnings",
           inputSchema: {
@@ -30272,7 +29850,7 @@ async function runMcpServer() {
         },
         {
           name: "set_config",
-          description: "Update a Honcho plugin configuration field. Dangerous changes (workspace, endpoint) require confirm=true.",
+          description: "Update a Honcho plugin configuration field. Dangerous changes (workspace, baseUrl) require confirm=true.",
           inputSchema: {
             type: "object",
             properties: {
@@ -30283,44 +29861,15 @@ async function runMcpServer() {
                   "peerName",
                   "aiPeer",
                   "workspace",
-                  "globalOverride",
-                  "endpoint.environment",
-                  "endpoint.baseUrl",
-                  "sessionStrategy",
-                  "sessionPeerPrefix",
-                  "enabled",
-                  "logging",
-                  "saveMessages",
-                  "messageUpload.maxUserTokens",
-                  "messageUpload.maxAssistantTokens",
-                  "messageUpload.summarizeAssistant",
-                  "contextRefresh.messageThreshold",
-                  "contextRefresh.ttlSeconds",
-                  "contextRefresh.skipDialectic",
-                  "reasoningLevel",
-                  "observationMode",
-                  "redactPatterns",
-                  "injection.sessionStart",
-                  "injection.perTurn",
-                  "injection.showContents",
-                  "injection.searchTopK",
-                  "injection.maxConclusions",
-                  "injection.searchMaxDistance",
-                  "injection.searchQuerySource",
-                  "injection.sessionContextTokens",
-                  "injection.dialecticTemplate",
-                  "injection.dialecticReasoning",
-                  "rememberTool",
-                  "sessions.set",
-                  "sessions.remove"
+                  "baseUrl"
                 ]
               },
               value: {
-                description: 'New value. For sessions.set: {path, name}. For sessions.remove: {path}. For injection.sessionStart / injection.perTurn / injection.showContents: a string array of component names (e.g. ["summary","peerCard"]). For redactPatterns: a string array of regexes redacted from tool summaries in addition to the built-in secret patterns.'
+                description: "New value."
               },
               confirm: {
                 type: "boolean",
-                description: "Required true for dangerous changes (workspace, endpoint). Without it, returns a warning instead of applying."
+                description: "Required true for dangerous changes (workspace, baseUrl). Without it, returns a warning instead of applying."
               }
             },
             required: ["field", "value"]
@@ -30331,27 +29880,28 @@ async function runMcpServer() {
   });
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
-    const cwd = getLastActiveCwd() || process.cwd();
     clients ??= createClients();
     if (!clients) {
       return NOT_CONFIGURED_RESULT;
     }
     const { config: config2, honcho, honchoDialectic } = clients;
+    await refreshCredential(config2);
+    setClientApiKey(honcho, config2.apiKey);
+    setClientApiKey(honchoDialectic, config2.apiKey);
     if (name === "get_config") {
-      return handleGetConfig(cwd);
+      return handleGetConfig();
     }
     if (name === "set_config") {
       return handleSetConfig(args);
     }
     if (name === "list_conclusions" || name === "delete_conclusion" || name === "query_conclusions") {
       try {
-        const observationMode = getObservationMode(config2);
-        const scopePeer = observationMode === "unified" ? await honcho.peer(config2.peerName) : await honcho.peer(config2.aiPeer);
-        const conclusionScope = scopePeer.conclusionsOf(config2.peerName);
+        const userPeer = await honcho.peer(config2.peerName);
+        const conclusionScope = userPeer.conclusionsOf(config2.peerName);
         if (name === "list_conclusions") {
           const page = args?.page ?? 1;
           const size = Math.min(args?.size ?? 20, 100);
-          const result = await conclusionScope.list({ page, size });
+          const result = await conclusionScope.list({ page, size, filters: DERIVED_ONLY });
           const items = result.items.map((c) => ({
             id: c.id,
             content: c.content,
@@ -30367,7 +29917,7 @@ async function runMcpServer() {
         if (name === "query_conclusions") {
           const query = args?.query;
           const topK = Math.min(args?.top_k ?? 10, 50);
-          const conclusions = await conclusionScope.query(query, topK);
+          const conclusions = await conclusionScope.query(query, topK, undefined, DERIVED_ONLY);
           const items = conclusions.map((c) => ({
             id: c.id,
             content: c.content,
@@ -30389,23 +29939,25 @@ async function runMcpServer() {
         };
       }
     }
-    const sessionName = getSessionName(cwd);
+    const sessionName = getSessionName();
+    const needsSession = name === "create_conclusion" || name === "search" && args?.scope === "session";
+    if (!sessionName && needsSession) {
+      return {
+        content: [{ type: "text", text: "Error: no Claude Code session id available" }],
+        isError: true
+      };
+    }
     try {
-      const session = await honcho.session(sessionName);
-      const observationMode = getObservationMode(config2);
+      const session = needsSession && sessionName ? await honcho.session(sessionName) : undefined;
       const userPeer = await honcho.peer(config2.peerName);
-      const aiPeer = observationMode === "directional" ? await honcho.peer(config2.aiPeer) : null;
-      const activePeer = observationMode === "unified" ? userPeer : aiPeer;
-      const chatTarget = observationMode === "unified" ? undefined : config2.peerName;
-      const contextTarget = observationMode === "unified" ? undefined : config2.peerName;
+      const scope = parseScope(args?.scope);
       switch (name) {
         case "search": {
           const query = args?.query;
           const limit = args?.limit ?? 10;
-          const scope = args?.scope ?? "session";
           const [messages, conclusions] = await Promise.all([
-            scope === "workspace" ? honcho.search(query, { limit }) : session.search(query, { limit }),
-            activePeer.conclusionsOf(config2.peerName).query(query, limit).catch(() => [])
+            session ? session.search(query, { limit }) : honcho.search(query, { limit }),
+            userPeer.conclusionsOf(config2.peerName).query(query, limit, undefined, DERIVED_ONLY).catch(() => [])
           ]);
           const results = {
             messages: messages.map((msg) => ({
@@ -30430,16 +29982,21 @@ async function runMcpServer() {
         }
         case "chat": {
           const query = args?.query;
-          const reasoningLevel = args?.reasoning_level ?? config2.reasoningLevel ?? "medium";
+          const reasoningLevel = args?.reasoning_level ?? "medium";
           let deadlineTimer;
           const deadline = new Promise((_, reject) => {
             deadlineTimer = setTimeout(() => reject(new Error(`Dialectic call exceeded ${DIALECTIC_TIMEOUT_MS}ms`)), DIALECTIC_TIMEOUT_MS);
           });
           const chatFlow = (async () => {
-            const dialecticPeer = await honchoDialectic.peer(activePeer.id);
+            if (args?.workspace === true) {
+              return honchoDialectic.chat(query, {
+                ...scope ? { scope } : {},
+                reasoningLevel
+              });
+            }
+            const dialecticPeer = await honchoDialectic.peer(userPeer.id);
             return dialecticPeer.chat(query, {
-              ...chatTarget ? { target: chatTarget } : {},
-              session,
+              ...scope ? { scope } : {},
               reasoningLevel
             });
           })();
@@ -30458,77 +30015,9 @@ async function runMcpServer() {
             chatFlow.catch(() => {});
           }
         }
-        case "honcho_remember": {
-          const queries = Array.isArray(args?.queries) ? args.queries.map(String).map((q) => q.trim()).filter(Boolean) : [];
-          const reasoningLevel = args?.reasoning_level;
-          if (queries.length === 0) {
-            return {
-              content: [{ type: "text", text: "honcho_remember requires a non-empty `queries` array." }],
-              isError: true
-            };
-          }
-          if (queries.length > REMEMBER_MAX_QUERIES) {
-            return {
-              content: [{ type: "text", text: `honcho_remember accepts at most ${REMEMBER_MAX_QUERIES} queries (got ${queries.length}).` }],
-              isError: true
-            };
-          }
-          if (!REMEMBER_REASONING_LEVELS.includes(reasoningLevel)) {
-            return {
-              content: [{ type: "text", text: `reasoning_level must be one of: ${REMEMBER_REASONING_LEVELS.join(", ")}` }],
-              isError: true
-            };
-          }
-          let deadlineTimer;
-          const deadline = new Promise((_, reject) => {
-            deadlineTimer = setTimeout(() => reject(new Error(`honcho_remember exceeded ${DIALECTIC_TIMEOUT_MS}ms`)), DIALECTIC_TIMEOUT_MS);
-          });
-          const batchStart = Date.now();
-          const fanOut = (async () => {
-            const dialecticPeer = await honchoDialectic.peer(activePeer.id);
-            return Promise.allSettled(queries.map(async (q) => {
-              const qStart = Date.now();
-              const answer = await dialecticPeer.chat(q, {
-                ...chatTarget ? { target: chatTarget } : {},
-                session,
-                reasoningLevel
-              });
-              return { answer, ms: Date.now() - qStart };
-            }));
-          })();
-          try {
-            const settled = await Promise.race([fanOut, deadline]);
-            const totalMs = Date.now() - batchStart;
-            const secs = (ms) => `${(ms / 1000).toFixed(1)}s`;
-            const hits = settled.filter((r) => r.status === "fulfilled" && r.value.answer).length;
-            const header = `recalled ${hits} insight${hits === 1 ? "" : "s"} · ` + `${queries.length} dialectic${queries.length === 1 ? "" : "s"} @ ${reasoningLevel} · ${secs(totalMs)}`;
-            const blocks = settled.map((r, i) => {
-              const label = `q${i + 1} "${queries[i]}"`;
-              if (r.status === "rejected") {
-                const msg = r.reason instanceof Error ? r.reason.message : String(r.reason);
-                return `${label} — failed
-→ (error: ${msg})`;
-              }
-              const { answer, ms } = r.value;
-              const body = answer && answer.trim() ? answer.trim() : "(no memory found)";
-              return `${label} — ${secs(ms)}
-→ ${body}`;
-            });
-            return {
-              content: [{ type: "text", text: `${header}
-
-${blocks.join(`
-
-`)}` }]
-            };
-          } finally {
-            clearTimeout(deadlineTimer);
-            fanOut.catch(() => {});
-          }
-        }
         case "create_conclusion": {
           const content = args?.content;
-          const conclusions = await activePeer.conclusionsOf(config2.peerName).create({
+          const conclusions = await userPeer.conclusionsOf(config2.peerName).create({
             content,
             sessionId: session.id
           });
@@ -30539,50 +30028,6 @@ ${blocks.join(`
                 text: `Saved conclusion: ${conclusions[0]?.content || content}`
               }
             ]
-          };
-        }
-        case "get_briefing": {
-          const [summariesResult, ctxResult] = await Promise.allSettled([
-            session.summaries(),
-            activePeer.context({
-              ...contextTarget ? { target: contextTarget } : {},
-              maxConclusions: 25,
-              includeMostFrequent: true
-            })
-          ]);
-          const summary = summariesResult.status === "fulfilled" ? summariesResult.value?.longSummary?.content?.trim() : null;
-          const card = ctxResult.status === "fulfilled" ? (ctxResult.value?.peerCard ?? []).filter((item) => item?.trim()) : [];
-          const parts = [];
-          if (summary)
-            parts.push(`## Session summary
-${summary}`);
-          if (card.length)
-            parts.push(`## Peer card (${card.length} items)
-${card.map((item) => `- ${item}`).join(`
-`)}`);
-          if (parts.length === 0)
-            parts.push("No briefing available yet — no stored session summary or peer card.");
-          return {
-            content: [{ type: "text", text: parts.join(`
-
-`) }]
-          };
-        }
-        case "get_context": {
-          const maxConclusions = args?.max_conclusions ?? 25;
-          const ctx = await activePeer.context({
-            ...contextTarget ? { target: contextTarget } : {},
-            maxConclusions,
-            includeMostFrequent: true
-          });
-          return {
-            content: [{ type: "text", text: JSON.stringify(ctx, null, 2) }]
-          };
-        }
-        case "get_representation": {
-          const rep = await activePeer.representation(contextTarget ? { target: contextTarget } : undefined);
-          return {
-            content: [{ type: "text", text: typeof rep === "string" ? rep : JSON.stringify(rep, null, 2) }]
           };
         }
         default:
@@ -30615,5 +30060,5 @@ ${card.map((item) => `- ${item}`).join(`
 // mcp-server.ts
 await runMcpServer();
 
-//# debugId=67855800AE01CDB964756E2164756E21
+//# debugId=EF4F1DFDA7DE2B7364756E2164756E21
 

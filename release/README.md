@@ -19,7 +19,7 @@ Rebuild after changing `plugins/honcho/src`:
 ```bash
 cd plugins/honcho
 bun install --frozen-lockfile && bun test
-RELEASE_VERSION=0.3.4-podden.N bun scripts/build.ts
+RELEASE_VERSION=0.4.1-podden.N bun scripts/build.ts
 cd ../.. && git rm -rq release/honcho && mkdir -p release/honcho
 cp -r plugins/honcho/.stage/. release/honcho/
 find release/honcho -name "*.map" -delete

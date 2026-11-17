@@ -1,5 +1,8 @@
 {
   "description": "Honcho memory hooks for Claude Code sessions",
+  "modules": [
+    "./register.tsx"
+  ],
   "hooks": {
     "SessionStart": [
       {
@@ -28,66 +31,19 @@
         ]
       }
     ],
-    "PostToolUse": [
-      {
-        "matcher": "Write|Edit|Bash|Task",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bun run \"${CLAUDE_PLUGIN_ROOT}/hooks/post-tool-use.ts\"",
-            "timeout": 10,
-            "async": true
-          }
-        ]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": "mcp__plugin_honcho_honcho__.*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bun run \"${CLAUDE_PLUGIN_ROOT}/hooks/pre-tool-honcho.ts\"",
-            "timeout": 4
-          }
-        ]
-      }
-    ],
     "UserPromptSubmit": [
       {
         "hooks": [
           {
             "type": "command",
             "command": "bun run \"${CLAUDE_PLUGIN_ROOT}/hooks/user-prompt.ts\"",
-            "timeout": 125
+            "timeout": 10
           },
           {
             "type": "command",
             "command": "bun run \"${CLAUDE_PLUGIN_ROOT}/hooks/save-user-message.ts\"",
             "timeout": 30,
             "async": true
-          }
-        ]
-      }
-    ],
-    "PreCompact": [
-      {
-        "matcher": "auto",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bun run \"${CLAUDE_PLUGIN_ROOT}/hooks/pre-compact.ts\"",
-            "timeout": 20
-          }
-        ]
-      },
-      {
-        "matcher": "manual",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bun run \"${CLAUDE_PLUGIN_ROOT}/hooks/pre-compact.ts\"",
-            "timeout": 20
           }
         ]
       }
@@ -99,12 +55,6 @@
             "type": "command",
             "command": "bun run \"${CLAUDE_PLUGIN_ROOT}/hooks/stop.ts\"",
             "timeout": 10,
-            "async": true
-          },
-          {
-            "type": "command",
-            "command": "bun run \"${CLAUDE_PLUGIN_ROOT}/hooks/recall-topic.ts\"",
-            "timeout": 90,
             "async": true
           }
         ]

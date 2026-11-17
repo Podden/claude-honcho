@@ -45,283 +45,449 @@ var __export = (target, all) => {
 };
 
 // src/config.ts
-import { homedir as homedir2 } from "os";
-import { join as join3, basename, dirname, resolve, sep } from "path";
+import { join as join3, dirname as dirname2 } from "path";
 import { fileURLToPath } from "url";
-import { chmodSync, existsSync as existsSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync2, statSync, writeFileSync as writeFileSync2 } from "fs";
+import { existsSync as existsSync3, readFileSync as readFileSync3 } from "fs";
 
-// src/git.ts
-import { execSync } from "child_process";
-import { existsSync } from "fs";
-import { join } from "path";
-function isGitRepo(cwd) {
-  return existsSync(join(cwd, ".git"));
-}
-function gitCommand(cwd, args) {
-  try {
-    return execSync(`git ${args}`, { cwd, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }).trim();
-  } catch {
-    return null;
-  }
-}
-function captureGitState(cwd) {
-  if (!isGitRepo(cwd)) {
-    return null;
-  }
-  const branch = gitCommand(cwd, "rev-parse --abbrev-ref HEAD") || "unknown";
-  const commit = gitCommand(cwd, "rev-parse --short HEAD") || "unknown";
-  const commitMessage = gitCommand(cwd, "log -1 --format=%s") || "";
-  const statusOutput = gitCommand(cwd, "status --porcelain") || "";
-  const isDirty = statusOutput.length > 0;
-  const dirtyFiles = isDirty ? statusOutput.split(`
-`).filter((line) => line.trim()).map((line) => line.slice(3).trim()).slice(0, 20) : [];
+// node_modules/@honcho-ai/harness-plugin-core/dist/config.js
+import { existsSync as existsSync2, readFileSync as readFileSync2 } from "node:fs";
+import { homedir } from "node:os";
+import { join as join2 } from "node:path";
+
+// node_modules/@honcho-ai/harness-plugin-core/dist/legacy/v01.js
+var isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+var str = (v) => typeof v === "string" && v ? v : undefined;
+function v01Reader(file, host) {
+  const hosts = isObj(file.hosts) ? file.hosts : {};
+  const v1 = typeof file.schemaVersion === "number" && file.schemaVersion >= 1;
+  const pick = (b) => {
+    const o = isObj(b) ? b : {};
+    if (v1)
+      return { apiKey: isObj(o.auth) ? str(o.auth.apiKey) : undefined, peerName: str(o.peerName), workspace: str(o.workspace), baseUrl: str(o.baseUrl) };
+    return {
+      apiKey: (isObj(o.auth) ? str(o.auth.apiKey) : undefined) ?? str(o.apiKey),
+      peerName: str(o.peerName),
+      workspace: str(o.workspace) ?? str(o.workspaceId),
+      baseUrl: str(o.baseUrl) ?? str(o.environmentUrl) ?? (isObj(o.endpoint) ? str(o.endpoint.baseUrl) : undefined)
+    };
+  };
+  const own = pick(hosts[host]);
+  const top = pick(file);
   return {
-    branch,
-    commit,
-    commitMessage,
-    isDirty,
-    dirtyFiles,
-    timestamp: new Date().toISOString()
+    apiKey: own.apiKey ?? top.apiKey,
+    peerName: own.peerName ?? top.peerName,
+    workspace: own.workspace ?? top.workspace,
+    aiPeer: isObj(hosts[host]) ? str(hosts[host].aiPeer) : undefined,
+    baseUrl: own.baseUrl ?? top.baseUrl
   };
 }
 
-// src/cache.ts
-import { homedir } from "os";
-import { join as join2 } from "path";
-import { existsSync as existsSync2, readFileSync, writeFileSync, mkdirSync } from "fs";
-var CACHE_DIR = join2(homedir(), ".honcho");
-var ID_CACHE_FILE = join2(CACHE_DIR, "cache.json");
-var CONTEXT_CACHE_FILE = join2(CACHE_DIR, "context-cache.json");
-function ensureCacheDir() {
-  if (!existsSync2(CACHE_DIR)) {
-    mkdirSync(CACHE_DIR, { recursive: true });
+// node_modules/@honcho-ai/harness-plugin-core/dist/oauth.js
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+var OAUTH_TOKEN_URL = "https://api.honcho.dev/oauth/token";
+var OAUTH_SCOPE = "write";
+var REQUEST_TIMEOUT_MS = 1e4;
+var REFRESH_SKEW_S = 60;
+var LOCK_STALE_MS = REQUEST_TIMEOUT_MS + 5000;
+var LOCK_WAIT_MS = LOCK_STALE_MS + 5000;
+var PERMANENT_ERRORS = new Set(["invalid_grant", "invalid_client", "unauthorized_client"]);
+
+class OAuthError extends Error {
+  code;
+  constructor(code, description) {
+    super(description || code);
+    this.code = code;
+    this.name = "OAuthError";
   }
 }
-function loadIdCache() {
-  ensureCacheDir();
-  if (!existsSync2(ID_CACHE_FILE)) {
-    return {};
-  }
+function isCloud(baseUrl) {
+  return normalizeBaseUrl(baseUrl || DEFAULT_BASE_URL) === DEFAULT_BASE_URL;
+}
+function accessValid(t, skewS = REFRESH_SKEW_S, nowS = Date.now() / 1000) {
+  return !!t?.accessToken && nowS < t.accessExpiresAt - skewS;
+}
+async function post(url, form, t) {
+  const f = t?.fetch ?? fetch;
+  let res;
   try {
-    return JSON.parse(readFileSync(ID_CACHE_FILE, "utf-8"));
-  } catch {
-    return {};
+    res = await f(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+      body: new URLSearchParams(form).toString(),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+    });
+  } catch (e) {
+    throw new OAuthError("connection_error", `could not reach ${url}: ${e.message}`);
   }
-}
-function saveIdCache(cache) {
-  ensureCacheDir();
-  writeFileSync(ID_CACHE_FILE, JSON.stringify(cache, null, 2));
-}
-function setCachedSessionId(cwd, name, id, instanceId) {
-  const cache = loadIdCache();
-  if (!cache.sessions)
-    cache.sessions = {};
-  cache.sessions[cwd] = { name, id, updatedAt: new Date().toISOString(), instanceId };
-  saveIdCache(cache);
-}
-function isScopeMember(workspace, scope, session) {
-  return loadIdCache().scopeMembers?.[`${workspace}/${scope}`]?.includes(session) ?? false;
-}
-function setScopeMember(workspace, scope, session) {
-  const cache = loadIdCache();
-  const key = `${workspace}/${scope}`;
-  cache.scopeMembers = { ...cache.scopeMembers, [key]: [...cache.scopeMembers?.[key] ?? [], session] };
-  saveIdCache(cache);
-}
-function getLastActiveCwd() {
-  const cache = loadIdCache();
-  if (!cache.sessions)
-    return null;
-  let latest = null;
-  for (const [cwd, entry] of Object.entries(cache.sessions)) {
-    if (!latest || entry.updatedAt > latest.updatedAt) {
-      latest = { cwd, updatedAt: entry.updatedAt };
-    }
-  }
-  return latest?.cwd || null;
-}
-function getClaudeInstanceId() {
-  const cache = loadIdCache();
-  return cache.claudeInstanceId || null;
-}
-function setClaudeInstanceId(instanceId) {
-  const cache = loadIdCache();
-  cache.claudeInstanceId = instanceId;
-  saveIdCache(cache);
-}
-function getInstanceIdForCwd(cwd) {
-  const cache = loadIdCache();
-  return cache.sessions?.[cwd]?.instanceId ?? null;
-}
-var CONTEXT_CACHE_KNOWN_KEYS = new Set([
-  "claudeContext",
-  "summaries",
-  "messageCount"
-]);
-function loadContextCache() {
-  ensureCacheDir();
-  if (!existsSync2(CONTEXT_CACHE_FILE)) {
-    return {};
-  }
+  let body = null;
   try {
-    const raw = JSON.parse(readFileSync(CONTEXT_CACHE_FILE, "utf-8"));
-    let cleaned = false;
-    for (const key of Object.keys(raw)) {
-      if (!CONTEXT_CACHE_KNOWN_KEYS.has(key)) {
-        delete raw[key];
-        cleaned = true;
-      }
-    }
-    if (cleaned) {
-      writeFileSync(CONTEXT_CACHE_FILE, JSON.stringify(raw, null, 2));
-    }
-    return raw;
+    body = await res.json();
   } catch {
-    return {};
+    body = null;
   }
+  return { status: res.status, body };
 }
-function saveContextCache(cache) {
-  ensureCacheDir();
-  writeFileSync(CONTEXT_CACHE_FILE, JSON.stringify(cache, null, 2));
+function errorOf(r) {
+  const b = r.body;
+  if (b && typeof b === "object" && typeof b.error === "string")
+    return new OAuthError(b.error, b.error_description);
+  return new OAuthError("invalid_response");
 }
-function incrementMessageCount() {
-  const cache = loadContextCache();
-  cache.messageCount = (cache.messageCount || 0) + 1;
-  saveContextCache(cache);
-  return cache.messageCount;
-}
-function getMessageCount() {
-  const cache = loadContextCache();
-  return cache.messageCount || 0;
-}
-function resetMessageCount() {
-  const cache = loadContextCache();
-  cache.messageCount = 0;
-  saveContextCache(cache);
-}
-var GIT_STATE_FILE = join2(CACHE_DIR, "git-state.json");
-function loadGitStateCache() {
-  ensureCacheDir();
-  if (!existsSync2(GIT_STATE_FILE)) {
-    return {};
+function tokensFrom(body, clientId, prev) {
+  if (!body || typeof body.access_token !== "string" || !Number.isFinite(Number(body.expires_in))) {
+    throw new OAuthError("invalid_response", "malformed token response");
   }
+  return {
+    accessToken: body.access_token,
+    refreshToken: body.refresh_token || prev?.refreshToken || "",
+    accessExpiresAt: Math.floor(Date.now() / 1000) + Number(body.expires_in),
+    clientId,
+    scope: body.scope || prev?.scope || OAUTH_SCOPE
+  };
+}
+async function refreshAccessToken(prev, opts = {}) {
+  const r = await post(opts.tokenUrl ?? OAUTH_TOKEN_URL, { grant_type: "refresh_token", refresh_token: prev.refreshToken, client_id: prev.clientId }, opts);
+  if (r.status !== 200)
+    throw errorOf(r);
+  return tokensFrom(r.body, prev.clientId, prev);
+}
+function isObj2(v) {
+  return v !== null && typeof v === "object" && !Array.isArray(v);
+}
+function asTokens(v) {
+  if (!isObj2(v) || typeof v.accessToken !== "string" || !v.accessToken)
+    return;
+  return {
+    accessToken: v.accessToken,
+    refreshToken: typeof v.refreshToken === "string" ? v.refreshToken : "",
+    accessExpiresAt: Number(v.accessExpiresAt) || 0,
+    clientId: typeof v.clientId === "string" ? v.clientId : "",
+    scope: typeof v.scope === "string" ? v.scope : ""
+  };
+}
+function readFile(path) {
+  if (!existsSync(path))
+    return {};
+  const parsed = JSON.parse(readFileSync(path, "utf-8"));
+  return isObj2(parsed) ? parsed : {};
+}
+function readGrant(file, host, legacy) {
+  return asTokens(effectiveBlock(file, host, legacy).oauth);
+}
+function holderAlive(token, ageMs) {
+  if (token === "")
+    return ageMs < 1000;
+  const pid = Number(token.split(":")[0]);
+  if (!Number.isInteger(pid) || pid <= 0)
+    return true;
   try {
-    return JSON.parse(readFileSync(GIT_STATE_FILE, "utf-8"));
-  } catch {
-    return {};
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return e.code === "EPERM";
   }
 }
-function saveGitStateCache(cache) {
-  ensureCacheDir();
-  writeFileSync(GIT_STATE_FILE, JSON.stringify(cache, null, 2));
-}
-function getCachedGitState(cwd) {
-  const cache = loadGitStateCache();
-  return cache[cwd] || null;
-}
-function setCachedGitState(cwd, state) {
-  const cache = loadGitStateCache();
-  cache[cwd] = state;
-  saveGitStateCache(cache);
-}
-function detectGitChanges(previous, current) {
-  const changes = [];
-  if (!previous) {
-    changes.push({
-      type: "initial",
-      description: `Session started on branch '${current.branch}' at ${current.commit}`
-    });
-    return changes;
-  }
-  if (previous.branch !== current.branch) {
-    changes.push({
-      type: "branch_switch",
-      description: `Branch switched from '${previous.branch}' to '${current.branch}'`,
-      from: previous.branch,
-      to: current.branch
-    });
-  }
-  if (previous.commit !== current.commit) {
-    changes.push({
-      type: "new_commits",
-      description: `New commit: ${current.commit} - ${current.commitMessage}`,
-      from: previous.commit,
-      to: current.commit
-    });
-  }
-  if (!previous.isDirty && current.isDirty) {
-    changes.push({
-      type: "files_changed",
-      description: `Uncommitted changes detected: ${current.dirtyFiles.slice(0, 5).join(", ")}${current.dirtyFiles.length > 5 ? "..." : ""}`
-    });
-  }
-  return changes;
-}
-var MAX_MESSAGE_SIZE = 24000;
-function chunkContent(content, maxSize = MAX_MESSAGE_SIZE) {
-  if (content.length <= maxSize) {
-    return [content];
-  }
-  const chunks = [];
-  let remaining = content;
-  while (remaining.length > 0) {
-    if (remaining.length <= maxSize) {
-      chunks.push(remaining);
-      break;
-    }
-    let splitIndex = remaining.lastIndexOf(`
-`, maxSize);
-    if (splitIndex <= 0 || splitIndex < maxSize * 0.25) {
-      splitIndex = remaining.lastIndexOf(" ", maxSize);
-    }
-    if (splitIndex <= 0 || splitIndex < maxSize * 0.25) {
-      splitIndex = maxSize;
-    }
-    chunks.push(remaining.slice(0, splitIndex));
-    remaining = remaining.slice(splitIndex).trimStart();
-  }
-  if (chunks.length > 1) {
-    return chunks.map((chunk, i) => `[Part ${i + 1}/${chunks.length}] ${chunk}`);
-  }
-  return chunks;
-}
-var HONCHO_MAX_BATCH = 100;
-async function addMessagesBatched(session, messages, resolveFallback) {
-  let active = session;
-  let usedFallback = false;
-  for (let i = 0;i < messages.length; i += HONCHO_MAX_BATCH) {
-    const batch = messages.slice(i, i + HONCHO_MAX_BATCH);
+async function withConfigLock(path, fn) {
+  const lock = `${path}.lock`;
+  mkdirSync(dirname(path), { recursive: true });
+  const start = Date.now();
+  let fd;
+  while (fd === undefined) {
     try {
-      await active.addMessages(batch);
+      fd = openSync(lock, "wx", 384);
     } catch (e) {
-      if (usedFallback || !resolveFallback)
+      if (e.code !== "EEXIST")
         throw e;
-      active = await resolveFallback(e);
-      usedFallback = true;
-      await active.addMessages(batch);
+      try {
+        const age = Date.now() - statSync(lock).mtimeMs;
+        if (age > LOCK_STALE_MS || !holderAlive(readFileSync(lock, "utf-8"), age))
+          unlinkSync(lock);
+      } catch {}
+      if (Date.now() - start > LOCK_WAIT_MS)
+        throw new Error(`timed out waiting for ${lock}`);
+      await new Promise((r) => setTimeout(r, 50 + Math.random() * 50));
     }
   }
+  const token = `${process.pid}:${Math.random().toString(36).slice(2)}`;
+  try {
+    writeFileSync(fd, token);
+    return await fn();
+  } finally {
+    closeSync(fd);
+    try {
+      if (readFileSync(lock, "utf-8") === token)
+        unlinkSync(lock);
+    } catch {}
+  }
 }
-function clearIdCache() {
-  ensureCacheDir();
-  writeFileSync(ID_CACHE_FILE, "{}");
+function writeFileAtomic(path, data) {
+  const tmp = join(dirname(path), `.${Date.now()}-${process.pid}-${Math.random().toString(36).slice(2)}.tmp`);
+  writeFileSync(tmp, JSON.stringify(data, null, 2) + `
+`, { mode: 384 });
+  renameSync(tmp, path);
 }
-function clearPeerCache() {
-  const cache = loadIdCache();
-  delete cache.peers;
-  saveIdCache(cache);
+async function updateConfigFile(path, mutate) {
+  await withConfigLock(path, async () => {
+    const file = readFile(path);
+    mutate(file);
+    writeFileAtomic(path, file);
+  });
 }
-function clearUserContextOnly() {
-  const cache = loadContextCache();
-  delete cache.userContext;
-  saveContextCache(cache);
+function setGrant(file, host, tokens) {
+  const block = hostBlock(file, host);
+  if (tokens)
+    block.oauth = tokens;
+  else
+    delete block.oauth;
 }
-function clearClaudeContextOnly() {
-  const cache = loadContextCache();
-  delete cache.claudeContext;
-  saveContextCache(cache);
+function serverOf(block, baseUrl, env) {
+  return baseUrl ?? (env.HONCHO_BASE_URL || undefined) ?? (typeof block.baseUrl === "string" && block.baseUrl ? block.baseUrl : undefined);
 }
-// node_modules/@honcho-ai/harness-plugin-core/src/telemetry.ts
+function pickCredential(file, opts) {
+  const env = opts.env ?? process.env;
+  if (env.HONCHO_API_KEY)
+    return { token: env.HONCHO_API_KEY, source: "env" };
+  const block = effectiveBlock(file, opts.host, opts.legacy);
+  const g = isCloud(serverOf(block, opts.baseUrl, env)) ? asTokens(block.oauth) : undefined;
+  if (g)
+    return { token: g.accessToken, source: "oauth", expiresAt: g.accessExpiresAt, ...accessValid(g, 0) ? {} : { expired: true } };
+  return typeof block.apiKey === "string" && block.apiKey ? { token: block.apiKey, source: "apiKey" } : null;
+}
+async function ensureFreshCredential(opts) {
+  const env = opts.env ?? process.env;
+  if (env.HONCHO_API_KEY)
+    return { token: env.HONCHO_API_KEY, source: "env" };
+  let file;
+  try {
+    file = readFile(opts.path);
+  } catch {
+    file = {};
+  }
+  const block = effectiveBlock(file, opts.host, opts.legacy);
+  const g = isCloud(serverOf(block, opts.baseUrl, env)) ? asTokens(block.oauth) : undefined;
+  if (!g || accessValid(g) || !g.refreshToken)
+    return pickCredential(file, opts);
+  let error;
+  try {
+    await withConfigLock(opts.path, async () => {
+      const current = readGrant(readFile(opts.path), opts.host, opts.legacy);
+      if (!current || accessValid(current))
+        return;
+      const next = await refreshAccessToken(current, opts);
+      const latest = readFile(opts.path);
+      setGrant(latest, opts.host, next);
+      writeFileAtomic(opts.path, latest);
+    });
+  } catch (e) {
+    error = e instanceof OAuthError ? e.code : e.message;
+  }
+  try {
+    file = readFile(opts.path);
+  } catch {}
+  const cred = pickCredential(file, opts);
+  if (cred && error) {
+    cred.error = error;
+    if (PERMANENT_ERRORS.has(error))
+      cred.reauthRequired = true;
+  }
+  return cred;
+}
+
+// node_modules/@honcho-ai/harness-plugin-core/dist/config.js
+var DEFAULT_BASE_URL = "https://api.honcho.dev";
+var CONFIG_SCHEMA_VERSION = 2;
+function isObj3(v) {
+  return v !== null && typeof v === "object" && !Array.isArray(v);
+}
+function str2(v) {
+  return typeof v === "string" && v ? v : undefined;
+}
+function normalizeBaseUrl(input) {
+  let s = input.trim();
+  if (!s)
+    return s;
+  if (!s.startsWith("http://") && !s.startsWith("https://")) {
+    const host = s.split("/")[0].split(":")[0].toLowerCase();
+    const local = host === "localhost" || host === "127.0.0.1" || host === "::1";
+    s = `${local ? "http" : "https"}://${s}`;
+  }
+  try {
+    const u = new URL(s);
+    u.hostname = u.hostname.toLowerCase();
+    const path = u.pathname === "/" ? "" : u.pathname.replace(/\/+$/, "");
+    return `${u.protocol}//${u.host}${path}`;
+  } catch {
+    return s;
+  }
+}
+function resolveConfig(file, opts) {
+  const env = opts.env ?? process.env;
+  const { host } = opts;
+  const block = effectiveBlock(file, host, opts.legacy);
+  return {
+    host,
+    peerName: str2(env.HONCHO_PEER_NAME) ?? str2(block.peerName) ?? str2(env.USER) ?? str2(env.USERNAME) ?? "user",
+    workspace: str2(env.HONCHO_WORKSPACE) ?? str2(block.workspace) ?? opts.defaults?.workspace ?? host,
+    aiPeer: str2(env.HONCHO_AI_PEER) ?? str2(block.aiPeer) ?? opts.defaults?.aiPeer ?? host,
+    baseUrl: normalizeBaseUrl(str2(env.HONCHO_BASE_URL) ?? str2(block.baseUrl) ?? DEFAULT_BASE_URL),
+    warnings: checkConfig(file).map((i) => i.message)
+  };
+}
+function configPath(env = process.env) {
+  if (env.HONCHO_CONFIG_PATH)
+    return env.HONCHO_CONFIG_PATH;
+  const home = env.HOME || env.USERPROFILE || homedir();
+  return join2(home, ".honcho", "config.json");
+}
+function readConfigFile(env = process.env) {
+  const path = configPath(env);
+  if (!existsSync2(path))
+    return {};
+  try {
+    const parsed = JSON.parse(readFileSync2(path, "utf-8"));
+    return isObj3(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+async function saveHost(path, host, patch, legacy) {
+  await updateConfigFile(path, (file) => {
+    if (isNewer(file))
+      throw new Error(`${path} was written by a newer Honcho plugin; update this one.`);
+    const block = writeBlock(file, host, hostMigration(file, host, [], legacy));
+    if ("baseUrl" in patch && !("apiKey" in patch) && !sameServer(patch.baseUrl, str2(block.baseUrl)))
+      delete block.apiKey;
+    for (const [k, v] of Object.entries(patch)) {
+      if (v === undefined)
+        delete block[k];
+      else
+        block[k] = v;
+    }
+    block.schemaVersion = CONFIG_SCHEMA_VERSION;
+  });
+}
+var MOVABLE = ["apiKey", "peerName", "workspace", "aiPeer", "baseUrl"];
+function isNewer(file) {
+  return isObj3(file) && typeof file.schemaVersion === "number" && file.schemaVersion > CONFIG_SCHEMA_VERSION;
+}
+function isMigrated(block) {
+  return isObj3(block) && typeof block.schemaVersion === "number" && block.schemaVersion >= CONFIG_SCHEMA_VERSION;
+}
+function sameServer(a, b) {
+  return normalizeBaseUrl(a ?? DEFAULT_BASE_URL) === normalizeBaseUrl(b ?? DEFAULT_BASE_URL);
+}
+var LEGACY_HOST_KEYS = ["auth", "endpoint", "environmentUrl", "workspaceId"];
+function isGrant(v) {
+  return isObj3(v) && typeof v.accessToken === "string" && v.accessToken !== "";
+}
+function legacyGrantOf(b) {
+  return !isGrant(b.oauth) && isObj3(b.auth) && isObj3(b.auth.oauth) ? b.auth.oauth : undefined;
+}
+function checkConfig(file) {
+  if (!isObj3(file))
+    return [];
+  if (isNewer(file)) {
+    return [{ path: "schemaVersion", message: `This file is schema version ${file.schemaVersion}, newer than this plugin understands; update the plugin.` }];
+  }
+  const issues = [];
+  const hosts = isObj3(file.hosts) ? file.hosts : {};
+  const byWorkspace = new Map;
+  for (const h of Object.keys(hosts).filter((k) => isObj3(hosts[k]))) {
+    const block = hosts[h];
+    const peer = str2(block.peerName);
+    if (!peer)
+      continue;
+    const ws = str2(block.workspace) ?? h;
+    const peers = byWorkspace.get(ws) ?? new Map;
+    peers.set(peer, [...peers.get(peer) ?? [], h]);
+    byWorkspace.set(ws, peers);
+  }
+  for (const [ws, peers] of byWorkspace) {
+    if (peers.size < 2)
+      continue;
+    const list = [...peers].map(([p, hs]) => `${hs.join(", ")}: "${p}"`).join("; ");
+    issues.push({ path: "hosts", message: `Hosts in workspace "${ws}" use different peerNames (${list}), so the user is split across peers.` });
+  }
+  return issues;
+}
+function hostMigration(file, host, deadKeys = [], legacy = v01Reader) {
+  if (isNewer(file))
+    return { set: {}, remove: [] };
+  const f = isObj3(file) ? file : {};
+  const hosts = isObj3(f.hosts) ? f.hosts : {};
+  const block = isObj3(hosts[host]) ? hosts[host] : {};
+  const set = {};
+  const drop = [];
+  const grant = legacyGrantOf(block);
+  if (grant)
+    set.oauth = grant;
+  if (!isMigrated(block)) {
+    const old = { ...legacy(f, host) };
+    const signedIn = isGrant(block.oauth) || grant !== undefined;
+    if (old.baseUrl && sameServer(old.baseUrl, undefined))
+      old.baseUrl = undefined;
+    for (const key of MOVABLE) {
+      if (signedIn && (key === "apiKey" || key === "baseUrl"))
+        continue;
+      if (old[key] !== undefined && block[key] !== old[key])
+        set[key] = old[key];
+      else if (old[key] === undefined && block[key] !== undefined)
+        drop.push(key);
+    }
+    set.schemaVersion = CONFIG_SCHEMA_VERSION;
+  }
+  const remove = [...drop, ...LEGACY_HOST_KEYS, ...deadKeys].filter((k) => (k in block) && !(k in set));
+  return { set, remove };
+}
+function effectiveBlock(file, host, legacy) {
+  return writeBlock(structuredClone(isObj3(file) ? file : {}), host, hostMigration(file, host, [], legacy));
+}
+function hostBlock(file, host) {
+  if (host === "__proto__" || host === "constructor" || host === "prototype")
+    throw new Error(`invalid host name: ${host}`);
+  if (!isObj3(file.hosts))
+    file.hosts = {};
+  return isObj3(file.hosts[host]) ? file.hosts[host] : file.hosts[host] = {};
+}
+function writeBlock(file, host, { set, remove }) {
+  const block = hostBlock(file, host);
+  Object.assign(block, set);
+  for (const k of remove)
+    delete block[k];
+  return block;
+}
+async function migrateHost(path, host, deadKeys = [], legacy) {
+  const peek = hostMigration(readConfigFile({ HONCHO_CONFIG_PATH: path }), host, deadKeys, legacy);
+  if (!Object.keys(peek.set).length && !peek.remove.length)
+    return [];
+  let changed = [];
+  await updateConfigFile(path, (file) => {
+    const m = hostMigration(file, host, deadKeys, legacy);
+    changed = [...Object.keys(m.set).filter((k) => k !== "schemaVersion"), ...m.remove.map((k) => `-${k}`)];
+    if (Object.keys(m.set).length || m.remove.length)
+      writeBlock(file, host, m);
+  });
+  return changed;
+}
+// node_modules/@honcho-ai/harness-plugin-core/dist/legacy/claude-honcho.js
+var isObj4 = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+var str3 = (v) => typeof v === "string" && v ? v : undefined;
+function claudeHonchoReader(file, host) {
+  const hosts = isObj4(file.hosts) ? file.hosts : {};
+  const found = hosts[host] ?? hosts[host.replace(/_/g, "-")] ?? hosts[host.replace(/-/g, "_")];
+  const block = isObj4(found) ? found : undefined;
+  const endpoint = block?.endpoint ?? file.endpoint;
+  const override = file.globalOverride === true;
+  return {
+    apiKey: str3(block?.apiKey) ?? str3(file.apiKey),
+    baseUrl: str3(endpoint?.baseUrl)?.replace(/\/v3\/?$/, "") ?? (endpoint?.environment === "local" ? "http://localhost:8000" : undefined),
+    peerName: str3(file.peerName),
+    workspace: str3(override || !block ? file.workspace : block.workspace),
+    aiPeer: str3(override ? file.aiPeer ?? block?.aiPeer : block ? block.aiPeer : file[host === "cursor" ? "cursorPeer" : "claudePeer"])
+  };
+}
+// node_modules/@honcho-ai/harness-plugin-core/dist/telemetry.js
 var HEADER_HOST = "X-Honcho-Host";
 var HEADER_PLUGIN = "X-Honcho-Plugin";
 var HEADER_AGENT_MODEL = "X-Honcho-Agent-Model";
@@ -370,43 +536,10 @@ function telemetryHeaders(id = {}, extra) {
   return headers;
 }
 // src/config.ts
+var LEGACY = claudeHonchoReader;
 function sanitizeForSessionName(s) {
   return s.toLowerCase().replace(/[^a-z0-9-_]/g, "-");
 }
-var SESSION_START_COMPONENTS = ["directives", "summary", "peerCard", "peerRepresentation", "briefing"];
-var PER_TURN_COMPONENTS = ["userContext", "assistantContext", "sessionContext", "dialectic"];
-function normalizePerTurn(components) {
-  return components.map((c) => c === "context" ? "userContext" : c);
-}
-function scopeForSession(injection, sessionName) {
-  return Object.entries(injection.scopes ?? {}).find(([, sessions]) => sessions.includes(sessionName))?.[0];
-}
-function recallBoundary(injection, sessionName) {
-  if ((injection.recallScope ?? "peer") === "peer")
-    return {};
-  const scope = injection.recallScope === "scope" ? scopeForSession(injection, sessionName) : undefined;
-  return scope ? { scope } : { session: sessionName };
-}
-var DEFAULT_INJECTION = {
-  sessionStart: ["directives", "summary", "peerCard"],
-  perTurn: ["userContext"],
-  showContents: [],
-  searchTopK: 10,
-  maxConclusions: 15,
-  searchMaxDistance: 0.6,
-  searchQuerySource: "prompt",
-  sessionContextTokens: 1500,
-  dialecticTemplate: "Return a compact, factual list of anything from the user's history — preferences, prior decisions, relevant past work — that would help with the following. Write in the third person as background notes; do not address the user, ask questions, or offer next steps. If nothing relevant exists, say so in one line. Relevant to: %{user_query}",
-  dialecticReasoning: "medium",
-  recallScope: "peer",
-  scopes: {},
-  recall: null
-};
-var REASONING_LEVELS = ["minimal", "low", "medium", "high", "max"];
-var HONCHO_BASE_URLS = {
-  production: "https://api.honcho.dev/v3",
-  local: "http://localhost:8000/v3"
-};
 var _detectedHost = null;
 function setDetectedHost(host) {
   _detectedHost = host;
@@ -434,13 +567,6 @@ var DEFAULT_AI_PEER = {
   claude_code: "claude",
   obsidian: "honcho"
 };
-function coerceBoolean(value) {
-  if (typeof value === "string") {
-    const v = value.trim().toLowerCase();
-    return v !== "false" && v !== "0" && v !== "";
-  }
-  return Boolean(value);
-}
 var _stdinText = null;
 function cacheStdin(text) {
   _stdinText = text;
@@ -467,31 +593,14 @@ async function initHook() {
     process.exit(0);
   setDetectedHost(detectHost(input));
 }
-function deepEqual(a, b) {
-  if (a === b)
-    return true;
-  if (a == null || b == null)
-    return a === b;
-  if (typeof a !== typeof b)
-    return false;
-  if (typeof a !== "object")
-    return false;
-  const aObj = a;
-  const bObj = b;
-  const keys = new Set([...Object.keys(aObj), ...Object.keys(bObj)]);
-  for (const key of keys) {
-    if (!deepEqual(aObj[key], bObj[key]))
-      return false;
-  }
-  return true;
-}
-var CONFIG_DIR = join3(homedir2(), ".honcho");
-var CONFIG_FILE = join3(CONFIG_DIR, "config.json");
 function getConfigPath() {
-  return CONFIG_FILE;
+  return configPath();
+}
+function getConfigDir() {
+  return dirname2(configPath());
 }
 function configExists() {
-  return existsSync3(CONFIG_FILE);
+  return existsSync3(configPath());
 }
 function getPluginVersion() {
   const root = process.env.CLAUDE_PLUGIN_ROOT;
@@ -501,339 +610,146 @@ function getPluginVersion() {
   ];
   for (const manifest of candidates) {
     try {
-      const version = JSON.parse(readFileSync2(manifest, "utf-8")).version;
+      const version = JSON.parse(readFileSync3(manifest, "utf-8")).version;
       if (typeof version === "string" && version)
         return version;
     } catch {}
   }
   return "unknown";
 }
-function loadConfig2(host) {
-  const resolvedHost = host ?? getDetectedHost();
-  if (configExists()) {
-    try {
-      const content = readFileSync2(CONFIG_FILE, "utf-8");
-      const raw = JSON.parse(content);
-      return resolveConfig2(raw, resolvedHost);
-    } catch {}
-  }
-  return loadConfigFromEnv(resolvedHost);
+function legacyEndpoint(value) {
+  if (value === "local")
+    return "http://localhost:8000";
+  if (value?.startsWith("http"))
+    return value.replace(/\/v3\/?$/, "");
+  return;
 }
-function resolveConfig2(raw, host) {
-  const hostBlock = raw.hosts?.[host] ?? raw.hosts?.[host.replace(/_/g, "-")] ?? raw.hosts?.[host.replace(/-/g, "_")];
-  const apiKey = process.env.HONCHO_API_KEY || hostBlock?.apiKey || raw.apiKey;
-  if (!apiKey)
-    return null;
-  const peerName = raw.peerName || process.env.HONCHO_PEER_NAME || process.env.USER || process.env.USERNAME || "user";
-  let workspace;
-  let aiPeer;
-  if (raw.globalOverride === true) {
-    workspace = raw.workspace ?? DEFAULT_WORKSPACE[host];
-    aiPeer = raw.aiPeer ?? hostBlock?.aiPeer ?? DEFAULT_AI_PEER[host];
-  } else if (hostBlock) {
-    workspace = hostBlock.workspace ?? DEFAULT_WORKSPACE[host];
-    aiPeer = hostBlock.aiPeer ?? DEFAULT_AI_PEER[host];
-  } else {
-    workspace = process.env.HONCHO_WORKSPACE ?? raw.workspace ?? DEFAULT_WORKSPACE[host];
-    if (host === "cursor") {
-      aiPeer = raw.cursorPeer ?? DEFAULT_AI_PEER["cursor"];
-    } else {
-      aiPeer = raw.claudePeer ?? DEFAULT_AI_PEER["claude_code"];
-    }
-  }
-  const config = {
-    apiKey,
-    peerName,
-    workspace,
-    aiPeer,
-    sessionStrategy: hostBlock?.sessionStrategy ?? raw.sessionStrategy,
-    sessionPeerPrefix: hostBlock?.sessionPeerPrefix ?? raw.sessionPeerPrefix,
-    sessions: raw.sessions,
-    saveMessages: hostBlock?.saveMessages ?? raw.saveMessages,
-    saveToolUse: hostBlock?.saveToolUse ?? raw.saveToolUse,
-    saveGitEvents: hostBlock?.saveGitEvents ?? raw.saveGitEvents,
-    reasoningLevel: hostBlock?.reasoningLevel ?? raw.reasoningLevel,
-    observationMode: hostBlock?.observationMode ?? raw.observationMode,
-    messageUpload: hostBlock?.messageUpload ?? raw.messageUpload,
-    contextRefresh: hostBlock?.contextRefresh ?? raw.contextRefresh,
-    endpoint: hostBlock?.endpoint ?? raw.endpoint,
-    redactPatterns: hostBlock?.redactPatterns ?? raw.redactPatterns,
-    injection: hostBlock?.injection ?? raw.injection,
-    rememberTool: hostBlock?.rememberTool ?? raw.rememberTool,
-    enabled: hostBlock?.enabled ?? raw.enabled,
-    logging: hostBlock?.logging ?? raw.logging,
-    globalOverride: raw.globalOverride
-  };
-  return mergeWithEnvVars(config);
+function legacyEnv(host = getDetectedHost()) {
+  const env = process.env;
+  const peerVar = host === "cursor" ? "HONCHO_CURSOR_PEER" : "HONCHO_CLAUDE_PEER";
+  const candidates = [
+    ["HONCHO_BASE_URL", "baseUrl", "HONCHO_ENDPOINT", legacyEndpoint(env.HONCHO_ENDPOINT)],
+    ["HONCHO_AI_PEER", "aiPeer", peerVar, env[peerVar] || undefined]
+  ];
+  const set = candidates.filter(([newVar, , , value]) => value && !env[newVar]);
+  if (!set.length)
+    return {};
+  const block = effectiveBlock(readConfigFile(), host, LEGACY);
+  if (block.apiKey || block.oauth)
+    return {};
+  return Object.fromEntries(set.filter(([, setting]) => !block[setting]).map(([newVar, , oldVar, value]) => [newVar, [oldVar, value]]));
 }
-function loadConfigFromEnv(host) {
-  const apiKey = process.env.HONCHO_API_KEY;
-  if (!apiKey) {
-    return null;
-  }
-  const resolvedHost = host ?? getDetectedHost();
-  const peerName = process.env.HONCHO_PEER_NAME || process.env.USER || process.env.USERNAME || "user";
-  const workspace = process.env.HONCHO_WORKSPACE || DEFAULT_WORKSPACE[resolvedHost];
-  const hostPeerEnv = resolvedHost === "cursor" ? process.env.HONCHO_CURSOR_PEER : process.env.HONCHO_CLAUDE_PEER;
-  const aiPeer = process.env.HONCHO_AI_PEER || hostPeerEnv || DEFAULT_AI_PEER[resolvedHost];
-  const endpoint = process.env.HONCHO_ENDPOINT;
-  const config = {
-    apiKey,
-    peerName,
-    workspace,
-    aiPeer,
-    saveMessages: process.env.HONCHO_SAVE_MESSAGES !== "false",
-    saveToolUse: process.env.HONCHO_SAVE_TOOL_USE === "true",
-    saveGitEvents: process.env.HONCHO_SAVE_GIT_EVENTS === "true",
-    enabled: process.env.HONCHO_ENABLED !== "false",
-    logging: process.env.HONCHO_LOGGING !== "false"
-  };
-  if (endpoint) {
-    if (endpoint === "local") {
-      config.endpoint = { environment: "local" };
-    } else if (endpoint.startsWith("http")) {
-      config.endpoint = { baseUrl: endpoint };
-    }
-  }
-  return config;
+function honchoEnv(host) {
+  const legacy = Object.entries(legacyEnv(host));
+  if (!legacy.length)
+    return process.env;
+  return { ...process.env, ...Object.fromEntries(legacy.map(([k, [, value]]) => [k, value])) };
 }
-function mergeWithEnvVars(config) {
-  if (process.env.HONCHO_API_KEY) {
-    config.apiKey = process.env.HONCHO_API_KEY;
-  }
-  if (process.env.HONCHO_PEER_NAME) {
-    config.peerName = process.env.HONCHO_PEER_NAME;
-  }
-  if (process.env.HONCHO_ENABLED === "false") {
-    config.enabled = false;
-  }
-  if (process.env.HONCHO_LOGGING === "false") {
-    config.logging = false;
-  }
-  if (process.env.HONCHO_SAVE_MESSAGES === "false") {
-    config.saveMessages = false;
-  }
-  if (process.env.HONCHO_SAVE_TOOL_USE !== undefined) {
-    config.saveToolUse = process.env.HONCHO_SAVE_TOOL_USE === "true";
-  }
-  if (process.env.HONCHO_SAVE_GIT_EVENTS !== undefined) {
-    config.saveGitEvents = process.env.HONCHO_SAVE_GIT_EVENTS === "true";
-  }
-  return config;
-}
-function writeConfigFile(data) {
-  if (existsSync3(CONFIG_FILE))
-    chmodSync(CONFIG_FILE, 384);
-  writeFileSync2(CONFIG_FILE, JSON.stringify(data, null, 2), { mode: 384 });
-}
-function saveConfig(config) {
-  if (!existsSync3(CONFIG_DIR)) {
-    mkdirSync2(CONFIG_DIR, { recursive: true });
-  }
-  let existing = {};
-  if (existsSync3(CONFIG_FILE)) {
-    try {
-      existing = JSON.parse(readFileSync2(CONFIG_FILE, "utf-8"));
-    } catch {}
-  }
-  if (config.sessions !== undefined) {
-    existing.sessions = config.sessions;
-  }
-  const host = getDetectedHost();
-  if (!existing.hosts)
-    existing.hosts = {};
-  const existingHost = existing.hosts[host] ?? {};
-  const hostEntry = {};
-  const setHostIfExplicit = (key, value, rootValue) => {
-    if (value === undefined)
-      return;
-    const hasHostOverride = Object.prototype.hasOwnProperty.call(existingHost, key);
-    if (hasHostOverride || !deepEqual(value, rootValue)) {
-      hostEntry[key] = value;
-    }
-  };
-  setHostIfExplicit("workspace", config.workspace, existing.workspace ?? DEFAULT_WORKSPACE[host]);
-  setHostIfExplicit("aiPeer", config.aiPeer, existing.aiPeer ?? DEFAULT_AI_PEER[host]);
-  const enabledForSave = process.env.HONCHO_ENABLED === "false" && config.enabled === false ? existingHost.enabled : config.enabled;
-  const loggingForSave = process.env.HONCHO_LOGGING === "false" && config.logging === false ? existingHost.logging : config.logging;
-  const saveMessagesForSave = process.env.HONCHO_SAVE_MESSAGES === "false" && config.saveMessages === false ? existingHost.saveMessages : config.saveMessages;
-  setHostIfExplicit("enabled", enabledForSave, existing.enabled);
-  setHostIfExplicit("logging", loggingForSave, existing.logging);
-  setHostIfExplicit("saveMessages", saveMessagesForSave, existing.saveMessages);
-  setHostIfExplicit("sessionStrategy", config.sessionStrategy, existing.sessionStrategy);
-  setHostIfExplicit("sessionPeerPrefix", config.sessionPeerPrefix, existing.sessionPeerPrefix);
-  setHostIfExplicit("reasoningLevel", config.reasoningLevel, existing.reasoningLevel);
-  setHostIfExplicit("observationMode", config.observationMode, existing.observationMode);
-  setHostIfExplicit("messageUpload", config.messageUpload, existing.messageUpload);
-  setHostIfExplicit("contextRefresh", config.contextRefresh, existing.contextRefresh);
-  setHostIfExplicit("redactPatterns", config.redactPatterns, existing.redactPatterns);
-  setHostIfExplicit("endpoint", config.endpoint, existing.endpoint);
-  setHostIfExplicit("injection", config.injection, existing.injection);
-  setHostIfExplicit("rememberTool", config.rememberTool, existing.rememberTool);
-  if (existingHost.apiKey !== undefined) {
-    hostEntry.apiKey = existingHost.apiKey;
-  }
-  existing.hosts[host] = hostEntry;
-  writeConfigFile(existing);
-}
-function saveRootField(field, value) {
-  if (!existsSync3(CONFIG_DIR)) {
-    mkdirSync2(CONFIG_DIR, { recursive: true });
-  }
-  let existing = {};
-  if (existsSync3(CONFIG_FILE)) {
-    try {
-      existing = JSON.parse(readFileSync2(CONFIG_FILE, "utf-8"));
-    } catch {}
-  }
-  existing[field] = value;
-  writeConfigFile(existing);
-}
-function resolveWorktreeMainRoot(dir) {
-  try {
-    const gitPath = join3(dir, ".git");
-    if (!statSync(gitPath).isFile())
-      return null;
-    const match = readFileSync2(gitPath, "utf-8").match(/^gitdir:\s*(.+?)\s*$/m);
-    if (!match)
-      return null;
-    const gitdir = resolve(dir, match[1]);
-    const idx = gitdir.lastIndexOf(`${sep}worktrees${sep}`);
-    if (idx === -1)
-      return null;
-    const gitContainer = gitdir.slice(0, idx);
-    if (basename(gitContainer) === ".git")
-      return dirname(gitContainer);
-    if (gitContainer.endsWith(".git"))
-      return gitContainer;
-    return null;
-  } catch {
-    return null;
-  }
-}
-var MAX_GIT_WALK_UP = 12;
-function worktreeMainRootFor(cwd) {
-  try {
-    let dir = resolve(cwd);
-    for (let i = 0;i < MAX_GIT_WALK_UP; i++) {
-      if (existsSync3(join3(dir, ".git")))
-        return resolveWorktreeMainRoot(dir);
-      const parent = dirname(dir);
-      if (parent === dir)
-        break;
-      dir = parent;
-    }
-  } catch {}
-  return null;
-}
-function getSessionForPath(cwd, mainRoot) {
-  const config = loadConfig2();
-  if (!config?.sessions)
-    return null;
-  if (config.sessions[cwd])
-    return config.sessions[cwd];
-  const mr = mainRoot === undefined ? worktreeMainRootFor(cwd) : mainRoot;
-  if (mr && config.sessions[mr])
-    return config.sessions[mr];
-  return null;
-}
-function deriveSessionName(strategy, cwd, opts = {}) {
-  const usePrefix = opts.sessionPeerPrefix !== false;
-  const peerPart = opts.peerName ? sanitizeForSessionName(opts.peerName) : "user";
-  const repoPart = sanitizeForSessionName(basename(cwd));
-  const base = usePrefix ? `${peerPart}-${repoPart}` : repoPart;
-  switch (strategy) {
-    case "git-branch": {
-      if (opts.branch) {
-        const branchPart = sanitizeForSessionName(opts.branch);
-        return `${base}-${branchPart}`;
-      }
-      return base;
-    }
-    case "chat-instance": {
-      if (opts.instanceId) {
-        return usePrefix ? `${peerPart}-chat-${opts.instanceId}` : `chat-${opts.instanceId}`;
-      }
-      return base;
-    }
-    case "per-directory":
-    default:
-      return base;
-  }
-}
-function getSessionName(cwd, instanceId) {
-  const config = loadConfig2();
-  const strategy = config?.sessionStrategy ?? "per-directory";
-  const mainRoot = worktreeMainRootFor(cwd);
-  if (strategy === "per-directory") {
-    const configuredSession = getSessionForPath(cwd, mainRoot);
-    if (configuredSession) {
-      return configuredSession;
-    }
-  }
-  let branch;
-  if (strategy === "git-branch") {
-    branch = captureGitState(cwd)?.branch;
-  }
-  let resolvedInstanceId;
-  if (strategy === "chat-instance") {
-    resolvedInstanceId = instanceId || getInstanceIdForCwd(cwd) || getClaudeInstanceId() || undefined;
-  }
-  return deriveSessionName(strategy, mainRoot ?? cwd, {
-    peerName: config?.peerName,
-    sessionPeerPrefix: config?.sessionPeerPrefix,
-    branch,
-    instanceId: resolvedInstanceId
+function resolveHost(host) {
+  return resolveConfig(readConfigFile(), {
+    host,
+    env: honchoEnv(host),
+    defaults: { workspace: DEFAULT_WORKSPACE[host], aiPeer: DEFAULT_AI_PEER[host] },
+    legacy: LEGACY
   });
 }
-function setSessionForPath(cwd, sessionName) {
-  const config = loadConfig2();
-  if (!config)
-    return;
-  if (!config.sessions) {
-    config.sessions = {};
-  }
-  config.sessions[cwd] = sessionName;
-  saveConfig(config);
+function isLoggingEnabled(host = getDetectedHost()) {
+  if (process.env.HONCHO_LOGGING === "false")
+    return false;
+  const file = readConfigFile();
+  const hosts = file.hosts && typeof file.hosts === "object" ? file.hosts : {};
+  const own = [hosts[host], hosts[host.replace(/_/g, "-")]].map((block) => block && typeof block === "object" ? block.logging : undefined).find((v) => v !== undefined);
+  return (own ?? file.logging) !== false;
 }
-function getInjectionConfig(config) {
-  const injection = (config === undefined ? loadConfig2() : config)?.injection;
-  const resolved = { ...DEFAULT_INJECTION, ...injection ?? {} };
-  resolved.perTurn = Array.isArray(resolved.perTurn) ? normalizePerTurn(resolved.perTurn) : DEFAULT_INJECTION.perTurn;
-  resolved.showContents = Array.isArray(resolved.showContents) ? normalizePerTurn(resolved.showContents) : DEFAULT_INJECTION.showContents;
-  return resolved;
+function loadConfig2(host = getDetectedHost()) {
+  const cfg = resolveHost(host);
+  const cred = pickCredential(readConfigFile(), { host, baseUrl: cfg.baseUrl, env: honchoEnv(host), legacy: LEGACY });
+  if (!cred)
+    return null;
+  const { token: token2, ...authState } = cred;
+  return {
+    apiKey: token2,
+    auth: { ...authState, host },
+    peerName: cfg.peerName,
+    workspace: cfg.workspace,
+    aiPeer: cfg.aiPeer,
+    baseUrl: cfg.baseUrl
+  };
 }
-function isLoggingEnabled() {
-  const config = loadConfig2();
-  return config?.logging !== false;
+async function saveConfig(config, field) {
+  const host = getDetectedHost();
+  const env = honchoEnv(host);
+  const write = (key, envVar) => key === field || !env[envVar];
+  const patch = {};
+  if (write("peerName", "HONCHO_PEER_NAME"))
+    patch.peerName = config.peerName;
+  if (write("workspace", "HONCHO_WORKSPACE"))
+    patch.workspace = config.workspace === DEFAULT_WORKSPACE[host] ? undefined : config.workspace;
+  if (write("aiPeer", "HONCHO_AI_PEER"))
+    patch.aiPeer = config.aiPeer === DEFAULT_AI_PEER[host] ? undefined : config.aiPeer;
+  if (write("baseUrl", "HONCHO_BASE_URL"))
+    patch.baseUrl = config.baseUrl === DEFAULT_BASE_URL ? undefined : config.baseUrl;
+  await saveHost(configPath(), host, patch, LEGACY);
 }
-function isPluginEnabled() {
-  const config = loadConfig2();
-  return config?.enabled !== false;
+function getConfigIssues(host = getDetectedHost()) {
+  return checkConfig(readConfigFile()).filter((i) => i.path === "schemaVersion" || i.path === "hosts" && i.message.includes(host)).map((i) => i.message);
+}
+var DEAD_HOST_KEYS = [
+  "sessionStrategy",
+  "sessionPeerPrefix",
+  "sessions",
+  "injection",
+  "contextRefresh",
+  "messageUpload",
+  "reasoningLevel",
+  "statusline",
+  "saveToolUse",
+  "saveGitEvents",
+  "redactPatterns",
+  "rememberTool",
+  "observationMode",
+  "saveMessages",
+  "enabled",
+  "globalOverride",
+  "linkedHosts"
+];
+async function migrateConfig(host = getDetectedHost()) {
+  try {
+    const changed = await migrateHost(configPath(), host, DEAD_HOST_KEYS, LEGACY);
+    if (changed.length)
+      return `[honcho] Moved your Honcho settings into hosts.${host} in ~/.honcho/config.json.`;
+  } catch {}
+  return;
+}
+function getScopeGroups(host = getDetectedHost()) {
+  const groups = readConfigFile().hosts?.[host]?.scopeGroups;
+  return groups && typeof groups === "object" ? groups : {};
+}
+function getSessionName(sessionId) {
+  const id = sessionId || process.env.CLAUDE_CODE_SESSION_ID;
+  return id ? sanitizeForSessionName(id) : null;
 }
 function getKnownHosts() {
-  const cfgPath = getConfigPath();
-  if (!existsSync3(cfgPath))
-    return [];
-  try {
-    const raw = JSON.parse(readFileSync2(cfgPath, "utf-8"));
-    return raw.hosts ? Object.keys(raw.hosts) : [];
-  } catch {
-    return [];
-  }
+  const hosts = readConfigFile().hosts;
+  return hosts && typeof hosts === "object" ? Object.keys(hosts) : [];
 }
-function getHonchoBaseUrlForEndpoint(endpoint) {
-  if (endpoint?.baseUrl) {
-    const url = endpoint.baseUrl;
-    return url.endsWith("/v3") ? url : `${url}/v3`;
+async function refreshCredential(config) {
+  const host = config.auth?.host ?? getDetectedHost();
+  const cred = await ensureFreshCredential({ path: configPath(), host, baseUrl: config.baseUrl, env: honchoEnv(host), legacy: LEGACY });
+  if (!cred)
+    return;
+  const { token: token2, ...authState } = cred;
+  config.apiKey = token2;
+  config.auth = { ...authState, host };
+}
+function getAuthNotice(config) {
+  if (config.auth?.reauthRequired) {
+    return "[honcho] Your Honcho sign-in has expired. Run /honcho setup to sign in again.";
   }
-  if (endpoint?.environment === "local") {
-    return HONCHO_BASE_URLS.local;
-  }
-  return HONCHO_BASE_URLS.production;
+  return;
 }
 function getHonchoBaseUrl(config) {
-  return getHonchoBaseUrlForEndpoint(config.endpoint);
+  return `${config.baseUrl}/v3`;
 }
 function getTelemetryHeaders(host = getDetectedHost()) {
   return telemetryHeaders({
@@ -853,57 +769,52 @@ function getHonchoClientOptions(config) {
   };
 }
 function isProductionEndpoint(config) {
-  return getHonchoBaseUrl(config) === HONCHO_BASE_URLS.production;
+  return config.baseUrl === DEFAULT_BASE_URL;
 }
 function getEndpointInfo(config) {
-  if (config.endpoint?.baseUrl) {
-    return { type: "custom", url: config.endpoint.baseUrl };
-  }
-  if (config.endpoint?.environment === "local") {
-    return { type: "local", url: HONCHO_BASE_URLS.local };
-  }
-  return { type: "production", url: HONCHO_BASE_URLS.production };
-}
-var VALID_ENVIRONMENTS = new Set(["production", "local"]);
-function getObservationMode(config) {
-  return config.observationMode ?? "unified";
+  return { type: isProductionEndpoint(config) ? "production" : "custom", url: config.baseUrl };
 }
 
 // src/state.ts
-import { homedir as homedir3 } from "os";
+import { homedir as homedir2 } from "os";
 import { join as join4 } from "path";
-import { writeFileSync as writeFileSync3, unlinkSync } from "fs";
-var DIR = join4(homedir3(), ".honcho");
-function stateFile(sessionId) {
-  return join4(DIR, sessionId ? `state-${sessionId}.json` : "state.json");
-}
+import { writeFileSync as writeFileSync2, unlinkSync as unlinkSync2 } from "fs";
+var DIR = join4(homedir2(), ".honcho");
 function sessionFile(sessionId) {
-  return join4(DIR, sessionId ? `session-${sessionId}.json` : "session.json");
+  return join4(DIR, `session-${sessionId}.json`);
 }
-function setMemoryState(phase, detail, sessionId) {
+function noticeFile(sessionId) {
+  return join4(DIR, `notice-${sessionId}.json`);
+}
+function isModActive() {
+  return process.env.HONCHO_MOD_UI === "1";
+}
+function setNotice(text, sessionId) {
   try {
-    writeFileSync3(stateFile(sessionId), JSON.stringify({ phase, since: Date.now(), detail }));
+    writeFileSync2(noticeFile(sessionId), JSON.stringify({ text }));
   } catch {}
 }
 function setSessionLink(url, name, sessionId) {
+  if (!sessionId)
+    return;
   try {
-    writeFileSync3(sessionFile(sessionId), JSON.stringify({ url: url ?? "", name }));
+    writeFileSync2(sessionFile(sessionId), JSON.stringify({ url: url ?? "", name }));
   } catch {}
 }
 function clearSessionFiles(sessionId) {
   if (!sessionId)
     return;
-  for (const f of [stateFile(sessionId), sessionFile(sessionId)]) {
+  for (const f of [sessionFile(sessionId), noticeFile(sessionId)]) {
     try {
-      unlinkSync(f);
+      unlinkSync2(f);
     } catch {}
   }
 }
 
 // src/log.ts
-import { homedir as homedir4 } from "os";
+import { homedir as homedir3 } from "os";
 import { join as join5 } from "path";
-import { existsSync as existsSync4, appendFileSync, mkdirSync as mkdirSync3, readFileSync as readFileSync3, statSync as statSync2, writeFileSync as writeFileSync4 } from "fs";
+import { existsSync as existsSync4, appendFileSync, mkdirSync as mkdirSync2, readFileSync as readFileSync4, statSync as statSync2, writeFileSync as writeFileSync3 } from "fs";
 
 // src/unicode.ts
 var blocks = {
@@ -1004,8 +915,8 @@ var box = {
 };
 
 // src/log.ts
-var CACHE_DIR2 = join5(homedir4(), ".honcho");
-var LOG_FILE = join5(CACHE_DIR2, "activity.log");
+var CACHE_DIR = join5(homedir3(), ".honcho");
+var LOG_FILE = join5(CACHE_DIR, "activity.log");
 var MAX_LOG_SIZE = 100 * 1024;
 var sym = {
   check: symbols.check,
@@ -1020,8 +931,8 @@ var sym = {
   line: box.horizontal
 };
 function ensureLogDir() {
-  if (!existsSync4(CACHE_DIR2)) {
-    mkdirSync3(CACHE_DIR2, { recursive: true });
+  if (!existsSync4(CACHE_DIR)) {
+    mkdirSync2(CACHE_DIR, { recursive: true });
   }
 }
 var currentCwd = null;
@@ -1050,9 +961,9 @@ function logActivity(level, source, message, data, options) {
     if (existsSync4(LOG_FILE)) {
       const stats = statSync2(LOG_FILE).size;
       if (stats > MAX_LOG_SIZE) {
-        const content = readFileSync3(LOG_FILE, "utf-8");
+        const content = readFileSync4(LOG_FILE, "utf-8");
         const truncated = content.slice(-50 * 1024);
-        writeFileSync4(LOG_FILE, truncated);
+        writeFileSync3(LOG_FILE, truncated);
       }
     }
     appendFileSync(LOG_FILE, JSON.stringify(entry) + `
@@ -1079,9 +990,6 @@ async function handleSessionEnd() {
   if (!config) {
     process.exit(0);
   }
-  if (!isPluginEnabled()) {
-    process.exit(0);
-  }
   let hookInput = {};
   try {
     const input = getCachedStdin() ?? await readStdinText();
@@ -1091,9 +999,8 @@ async function handleSessionEnd() {
   } catch {}
   const cwd = hookInput.workspace_roots?.[0] || hookInput.cwd || process.cwd();
   const reason = hookInput.reason || "unknown";
-  const instanceId = hookInput.session_id || getInstanceIdForCwd(cwd);
-  const sessionName = getSessionName(cwd, instanceId || undefined);
-  setLogContext(cwd, sessionName);
+  const sessionName = getSessionName(hookInput.session_id);
+  setLogContext(cwd, sessionName ?? undefined);
   logHook("session-end", `Session ending`, { reason });
   clearSessionFiles(hookInput.session_id);
   logHook("session-end", "Session ended — no upload (messages saved live)");
@@ -1107,5 +1014,5 @@ async function main() {
 // hooks/session-end.ts
 await main();
 
-//# debugId=B2DF4FE473B0512F64756E2164756E21
+//# debugId=0A87E05E62732C1664756E2164756E21
 
